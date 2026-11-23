@@ -109,6 +109,58 @@ function downscale(file: Blob, max = 768, quality = 0.85): Promise<string> {
   })
 }
 
+/** Everything that defines what the library shows; mirrored into the URL so back/forward work. */
+type View = {
+  q: string
+  include: TagMap
+  exclude: TagMap
+  colors: string[]
+  sim: number[] | null
+  board: number | null
+  ref: number | null
+  img: string | null
+}
+
+function viewToParams(v: View): URLSearchParams {
+  const p = new URLSearchParams()
+  if (v.q.trim()) p.set('q', v.q.trim())
+  for (const [c, vs] of Object.entries(v.include)) for (const x of vs) p.append('f', `${c}:${x}`)
+  for (const [c, vs] of Object.entries(v.exclude)) for (const x of vs) p.append('x', `${c}:${x}`)
+  if (v.colors.length) p.set('c', v.colors.map((c) => c.replace('#', '')).join(','))
+  if (v.img) p.set('img', v.img.startsWith('data:') ? 'local' : v.img)
+  if (v.sim?.length) p.set('sim', v.sim.join(','))
+  if (v.board) p.set('board', String(v.board))
+  if (v.ref) p.set('ref', String(v.ref))
+  return p
+}
+
+function paramsToView(p: URLSearchParams, localImg?: string | null): View {
+  const tags = (key: string) => {
+    const m: TagMap = {}
+    for (const t of p.getAll(key)) {
+      const i = t.indexOf(':')
+      if (i > 0) m[t.slice(0, i)] = [...(m[t.slice(0, i)] ?? []), t.slice(i + 1)]
+    }
+    return m
+  }
+  const num = (k: string) => (p.get(k) && Number(p.get(k))) || null
+  const img = p.get('img')
+  const sim = (p.get('sim') ?? '').split(',').map(Number).filter(Boolean)
+  return {
+    q: p.get('q') ?? '',
+    include: tags('f'),
+    exclude: tags('x'),
+    colors: (p.get('c') ?? '').split(',').filter(Boolean).map((c) => `#${c}`),
+    sim: sim.length ? sim : null,
+    board: num('board'),
+    ref: num('ref'),
+    img: img === 'local' ? (localImg ?? null) : img,
+  }
+}
+
+type Crumb = { label: string; depth: number }
+type NavState = { depth: number; crumbs: Crumb[]; img?: string | null; closeBack?: boolean }
+
 type Row = { items: { card: Card; index: number; w: number }[]; h: number }
 
 /** Justified rows: every row fills the width, keeping each image's aspect ratio. */
@@ -132,14 +184,17 @@ function justify(cards: Card[], width: number, target: number): Row[] {
   return rows
 }
 
-export function Library({ initialRef, initialBoard }: { initialRef?: number; initialBoard?: number }) {
-  const [raw, setRaw] = useState('')
-  const [debounced, setDebounced] = useState('')
-  const [include, setInclude] = useState<TagMap>({})
-  const [exclude, setExclude] = useState<TagMap>({})
-  const [colors, setColors] = useState<string[]>([])
-  const [imageQuery, setImageQuery] = useState<string | null>(null)
-  const [similarTo, setSimilarTo] = useState<number[] | null>(null)
+export function Library({ initial }: { initial: string }) {
+  const start = useMemo(() => paramsToView(new URLSearchParams(initial)), [initial])
+  const [raw, setRaw] = useState(start.q)
+  const [debounced, setDebounced] = useState(start.q)
+  const [include, setInclude] = useState<TagMap>(start.include)
+  const [exclude, setExclude] = useState<TagMap>(start.exclude)
+  const [colors, setColors] = useState<string[]>(start.colors)
+  const [imageQuery, setImageQuery] = useState<string | null>(start.img)
+  const [similarTo, setSimilarTo] = useState<number[] | null>(start.sim)
+  const [refId, setRefId] = useState<number | null>(start.ref)
+  const [nav, setNav] = useState<NavState>({ depth: 0, crumbs: [] })
   const [cards, setCards] = useState<Card[]>([])
   const [total, setTotal] = useState<number | null>(null)
   const [hasMore, setHasMore] = useState(true)
@@ -151,11 +206,11 @@ export function Library({ initialRef, initialBoard }: { initialRef?: number; ini
   const [width, setWidth] = useState(1000)
   const [focus, setFocus] = useState(0)
   const [selected, setSelected] = useState<Set<number>>(new Set())
-  const [lightbox, setLightbox] = useState<Card | null>(null)
+  const [lightbox, setLightboxCard] = useState<Card | null>(null)
   const [dragging, setDragging] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [boards, setBoards] = useState<Board[]>([])
-  const [board, setBoard] = useState<number | null>(initialBoard ?? null)
+  const [board, setBoard] = useState<number | null>(start.board)
   const [boardDrop, setBoardDrop] = useState<number | null>(null)
   const [picker, setPicker] = useState<number[] | null>(null)
   const [newBoard, setNewBoard] = useState<string | null>(null)
@@ -296,11 +351,8 @@ export function Library({ initialRef, initialBoard }: { initialRef?: number; ini
     setSelected(new Set())
     setSimilarTo(null)
     setImageQuery(null)
-    const u = new URL(window.location.href)
-    if (id) u.searchParams.set('board', String(id))
-    else u.searchParams.delete('board')
-    u.searchParams.delete('ref')
-    window.history.replaceState(null, '', u)
+    setRefId(null)
+    setLightboxCard(null)
   }
 
   /** Adds images (files or links) to the library, and to the open board. */
@@ -363,10 +415,93 @@ export function Library({ initialRef, initialBoard }: { initialRef?: number; ini
     return () => ro.disconnect()
   }, [])
 
-  // Deep link: /library?ref=123 opens that reference.
+  /** Opens (or closes) the lightbox; the open image is part of the URL. */
+  const setLightbox = useCallback((c: Card | null) => {
+    setLightboxCard(c)
+    setRefId(c?.id ?? null)
+  }, [])
+
+  // The URL names the open image: load its card when it is not the one shown (deep links, back/forward).
   useEffect(() => {
-    if (initialRef) api<Card>(`/${initialRef}/card`).then(setLightbox).catch(() => undefined)
-  }, [initialRef])
+    if (!refId) return setLightboxCard(null)
+    if (lightbox?.id === refId) return
+    let live = true
+    api<Card>(`/${refId}/card`)
+      .then((c) => live && setLightboxCard(c))
+      .catch(() => undefined)
+    return () => {
+      live = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refId])
+
+  // ---- Browser history: every view gets its own URL, so back/forward retrace the path. ----
+  const replaceNext = useRef(false)
+  const labelRef = useRef('Newest')
+  const view: View = useMemo(
+    () => ({ q: debounced, include, exclude, colors, sim: similarTo, board, ref: refId, img: imageQuery }),
+    [debounced, include, exclude, colors, similarTo, board, refId, imageQuery],
+  )
+  useEffect(() => {
+    const qs = viewToParams(view).toString()
+    const url = qs ? `/library?${qs}` : '/library'
+    const here = window.location.pathname + window.location.search
+    const cur: NavState = window.history.state?.depth !== undefined ? window.history.state : { depth: 0, crumbs: [] }
+    if (url === here) {
+      if (window.history.state?.depth === undefined) window.history.replaceState({ ...cur, img: view.img }, '', url)
+      setNav(cur)
+      return
+    }
+    const before = new URLSearchParams(window.location.search)
+    const after = new URLSearchParams(qs)
+    before.delete('q')
+    after.delete('q')
+    const typingOnly = before.toString() === after.toString()
+    if (replaceNext.current || typingOnly) {
+      replaceNext.current = false
+      const next = { ...cur, img: view.img?.startsWith('data:') ? view.img : null }
+      window.history.replaceState(next, '', url)
+      setNav(next)
+      return
+    }
+    // Opening an image from the same view: closing it again steps back instead of adding history.
+    const withoutRef = new URLSearchParams(qs)
+    withoutRef.delete('ref')
+    const fromHere = new URLSearchParams(window.location.search)
+    const closeBack = Boolean(view.ref) && !fromHere.get('ref') && withoutRef.toString() === fromHere.toString()
+    const next: NavState = {
+      depth: cur.depth + 1,
+      crumbs: [...cur.crumbs, { label: labelRef.current, depth: cur.depth }].slice(-8),
+      img: view.img?.startsWith('data:') ? view.img : null,
+      closeBack,
+    }
+    window.history.pushState(next, '', url)
+    setNav(next)
+  }, [view])
+
+  useEffect(() => {
+    const onPop = (e: PopStateEvent) => {
+      const v = paramsToView(new URLSearchParams(window.location.search), e.state?.img)
+      setRaw(v.q)
+      setDebounced(v.q)
+      setInclude(v.include)
+      setExclude(v.exclude)
+      setColors(v.colors)
+      setImageQuery(v.img)
+      setSimilarTo(v.sim)
+      setBoard(v.board)
+      setRefId(v.ref)
+      setSelected(new Set())
+      setNav(e.state?.depth !== undefined ? e.state : { depth: 0, crumbs: [] })
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
+  const closeLightbox = useCallback(() => {
+    if (window.history.state?.closeBack) window.history.back()
+    else setLightbox(null)
+  }, [setLightbox])
 
   useEffect(() => {
     if (!toast) return
@@ -418,7 +553,7 @@ export function Library({ initialRef, initialBoard }: { initialRef?: number; ini
       }
       if (e.key === 'Escape') {
         if (picker) setPicker(null)
-        else if (lightbox) setLightbox(null)
+        else if (lightbox) closeLightbox()
         else if (selected.size) setSelected(new Set())
         else if (similarTo) setSimilarTo(null)
         return
@@ -432,7 +567,10 @@ export function Library({ initialRef, initialBoard }: { initialRef?: number; ini
       const move = (to: number) => {
         const i = Math.max(0, Math.min(cards.length - 1, to))
         setFocus(i)
-        if (lightbox) setLightbox(cards[i])
+        if (lightbox) {
+          replaceNext.current = true
+          setLightbox(cards[i])
+        }
         document.querySelector(`[data-idx="${i}"]`)?.scrollIntoView({ block: 'nearest' })
       }
       if (e.key === 'ArrowRight') move(focus + 1)
@@ -446,7 +584,8 @@ export function Library({ initialRef, initialBoard }: { initialRef?: number; ini
         move(target.items[Math.min(col, target.items.length - 1)].index)
       } else if (e.key === ' ' || e.key === 'Enter') {
         e.preventDefault()
-        setLightbox(lightbox ? null : cards[focus])
+        if (lightbox) closeLightbox()
+        else setLightbox(cards[focus])
       } else if (e.key === 's' || e.key === 'S') {
         moreLikeThese(selected.size ? [...selected] : [cards[focus].id])
       } else if (e.key === 'b' || e.key === 'B') {
@@ -466,7 +605,7 @@ export function Library({ initialRef, initialBoard }: { initialRef?: number; ini
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [cards, focus, lightbox, selected, similarTo, rows, rowOf, moreLikeThese, picker, board])
+  }, [cards, focus, lightbox, selected, similarTo, rows, rowOf, moreLikeThese, picker, board, closeLightbox, setLightbox])
 
   // Drop or paste an image (or image URL) anywhere to search by it.
   const searchByBlob = async (blob: Blob) => {
@@ -528,6 +667,23 @@ export function Library({ initialRef, initialBoard }: { initialRef?: number; ini
     if (files.length) void addToLibrary(files, boardId)
     else if (/^https?:\/\//.test(url)) void addToLibrary([url], boardId)
   }
+
+  const shortDesc = (d: string) => (d.split(/\s+/).slice(0, 5).join(' ') + (d.split(/\s+/).length > 5 ? '…' : '')).replace(/^(A|An|The) /, '')
+  const viewLabel = useMemo(() => {
+    const base = board
+      ? `Board: ${boards.find((b) => b.id === board)?.name ?? 'Board'}`
+      : similarTo
+        ? `Similar to ${similarTo.length === 1 ? `#${similarTo[0]}` : `${similarTo.length} refs`}`
+        : imageQuery
+          ? 'By image'
+          : debounced.trim()
+            ? `“${debounced.trim()}”`
+            : 'Newest'
+    return refId ? `${lightbox?.description ? shortDesc(lightbox.description) : `#${refId}`}` : base
+  }, [board, boards, similarTo, imageQuery, debounced, refId, lightbox])
+  useEffect(() => {
+    labelRef.current = viewLabel
+  })
 
   const filterChips = [
     ...Object.entries(include).flatMap(([c, vs]) => vs.map((v) => ({ c, v, ex: false }))),
@@ -746,6 +902,19 @@ export function Library({ initialRef, initialBoard }: { initialRef?: number; ini
           </label>
         </header>
 
+        {nav.depth > 0 && (
+          <nav className="lib-trail" aria-label="Where you have been">
+            <button className="lib-back" onClick={() => window.history.back()} title="Back (Alt ←)">
+              ‹ Back
+            </button>
+            {nav.crumbs.slice(-5).map((c) => (
+              <button key={c.depth} className="lib-crumb" onClick={() => window.history.go(c.depth - nav.depth)}>
+                {c.label}
+              </button>
+            ))}
+            <span className="lib-crumb cur">{viewLabel}</span>
+          </nav>
+        )}
         <div className="lib-status">
           <strong>{modeLabel}</strong>
           {total !== null && <span>{total.toLocaleString()} refs</span>}
@@ -863,7 +1032,8 @@ export function Library({ initialRef, initialBoard }: { initialRef?: number; ini
       {lightbox && (
         <Lightbox
           card={lightbox}
-          onClose={() => setLightbox(null)}
+          onClose={closeLightbox}
+          onBack={nav.depth > 0 ? () => window.history.back() : undefined}
           onOpen={setLightbox}
           onTag={(cat, v) => {
             setLightbox(null)
@@ -938,6 +1108,7 @@ function Lightbox({
   onSimilar,
   onCopy,
   onBoard,
+  onBack,
 }: {
   card: Card
   onClose: () => void
@@ -946,6 +1117,7 @@ function Lightbox({
   onSimilar: (id: number) => void
   onCopy: (hex: string) => void
   onBoard: (id: number) => void
+  onBack?: () => void
 }) {
   const [similar, setSimilar] = useState<Card[] | null>(null)
   useEffect(() => {
@@ -965,6 +1137,11 @@ function Lightbox({
         <img src={card.large ?? card.grid ?? card.thumb ?? ''} alt={card.description} />
       </div>
       <aside className="lib-lb-panel" onClick={(e) => e.stopPropagation()}>
+        {onBack && (
+          <button className="lib-back lib-lb-back" onClick={onBack} title="Back (Alt ←)">
+            ‹ Back
+          </button>
+        )}
         <button className="lib-lb-close" onClick={onClose} aria-label="Close">
           ×
         </button>

@@ -719,3 +719,44 @@ button {
   color: var(--muted);
   cursor: default !important;
 }
+
+/* History trail */
+.lib-trail {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 14px 4px;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+.lib-back {
+  background: var(--panel-2);
+  border-radius: 6px;
+  padding: 2px 9px;
+  margin-right: 6px;
+  color: var(--text);
+}
+.lib-crumb {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+button.lib-crumb:hover {
+  color: var(--text);
+  background: var(--panel-2);
+}
+.lib-crumb + .lib-crumb::before {
+  content: '›';
+  margin-right: 6px;
+  color: var(--muted);
+}
+.lib-crumb.cur {
+  color: var(--text);
+}
+.lib-lb-back {
+  margin: 0 0 12px;
+}
