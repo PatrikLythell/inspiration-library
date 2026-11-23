@@ -1,6 +1,8 @@
 import { defineTool } from '@payloadcms/plugin-mcp'
 import type { PayloadRequest } from 'payload'
 
+import { addReference, addToBoard, fetchImage } from '../import/add'
+import { hydrate } from '../search/lib'
 import { searchReferences, similarReferences, byPalette } from '../search/service'
 
 /**
@@ -155,5 +157,86 @@ export const referenceTools = {
     const i = input as any
     const { results } = await byPalette(req.payload, { colors: i.colors, limit: i.limit ?? 12 })
     return respond(results, i.include_images !== false, req)
+  }),
+
+  references_add: defineTool({
+    description:
+      'Add an image to the team reference library from a public image URL. It is tagged (mood, style, colour…) and made searchable automatically. If the library already has the same image, that one is returned. Optionally puts it on a board.',
+    annotations: { title: 'Add a reference' },
+    input: {
+      type: 'object',
+      properties: {
+        image_url: { type: 'string', description: 'Direct link to the image (jpg, png, webp)' },
+        source_url: { type: 'string', description: 'Page the image comes from, for credit' },
+        credit: { type: 'string', description: 'Who made it, if known' },
+        board_id: { type: 'integer', description: 'Board to add it to (see boards_list)' },
+      },
+      required: ['image_url'],
+    },
+  }).handler(async ({ input, req }) => {
+    const i = input as any
+    const out = await addReference(req.payload, {
+      data: await fetchImage(i.image_url),
+      sourceUrl: i.source_url ?? i.image_url,
+      credit: i.credit ?? null,
+      board: i.board_id ?? null,
+      userId: (req.user as any)?.id,
+    })
+    const res = await respond([out.reference], true, req)
+    res.content.unshift({ type: 'text', text: out.duplicate ? 'Already in the library; returning the existing reference.' : 'Added.' })
+    return res
+  }),
+
+  boards_list: defineTool({
+    description: 'List the team moodboards (id, name, parent board, number of references).',
+    annotations: { readOnlyHint: true, title: 'List boards' },
+    input: { type: 'object', properties: {} },
+  }).handler(async ({ req }) => {
+    const { docs } = await req.payload.find({ collection: 'boards', limit: 500, depth: 0, sort: 'name', overrideAccess: true })
+    const boards = docs.map((b: any) => ({ id: b.id, name: b.name, parent: b.parent ?? null, count: b.items?.length ?? 0, library_url: `${site()}/library?board=${b.id}` }))
+    return { content: [{ type: 'text', text: JSON.stringify(boards, null, 1) }] }
+  }),
+
+  boards_get: defineTool({
+    description: 'The references on one board, in board order, with previews.',
+    annotations: { readOnlyHint: true, title: 'Open a board' },
+    input: {
+      type: 'object',
+      properties: { board_id: { type: 'integer' }, include_images: { type: 'boolean', default: true } },
+      required: ['board_id'],
+    },
+  }).handler(async ({ input, req }) => {
+    const i = input as any
+    const board: any = await req.payload.findByID({ collection: 'boards', id: i.board_id, depth: 0, overrideAccess: true })
+    const ids = (board.items ?? []).map((it: any) => ({ id: Number(typeof it.reference === 'object' ? it.reference.id : it.reference), score: 0 }))
+    const cards = await hydrate(req.payload, ids)
+    const res = await respond(cards, i.include_images !== false, req)
+    res.content.unshift({ type: 'text', text: `Board "${board.name}" (${cards.length} references)` })
+    return res
+  }),
+
+  boards_add: defineTool({
+    description: 'Put references on a board. Give board_id for an existing board, or board_name to create a new one.',
+    annotations: { title: 'Add to board' },
+    input: {
+      type: 'object',
+      properties: {
+        ids: { type: 'array', items: { type: 'integer' }, minItems: 1, description: 'Reference ids' },
+        board_id: { type: 'integer' },
+        board_name: { type: 'string', description: 'Creates a new board with this name' },
+        note: { type: 'string', description: 'Why these were picked' },
+      },
+      required: ['ids'],
+    },
+  }).handler(async ({ input, req }) => {
+    const i = input as any
+    let id = i.board_id
+    if (!id) {
+      if (!i.board_name) return { content: [{ type: 'text', text: 'Give board_id or board_name.' }] }
+      const created: any = await req.payload.create({ collection: 'boards', data: { name: i.board_name, owner: (req.user as any)?.id } as any, overrideAccess: true })
+      id = created.id
+    }
+    const count = await addToBoard(req.payload, Number(id), i.ids.map(Number), i.note ?? null)
+    return { content: [{ type: 'text', text: JSON.stringify({ board_id: id, count, library_url: `${site()}/library?board=${id}` }) }] }
   }),
 }

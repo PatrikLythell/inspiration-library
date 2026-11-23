@@ -157,6 +157,7 @@ export interface Config {
   blocks: {};
   collections: {
     references: Reference;
+    boards: Board;
     media: Media;
     users: User;
     folders: Folder;
@@ -170,6 +171,7 @@ export interface Config {
   collectionsJoins: {};
   collectionsSelect: {
     references: ReferencesSelect<false> | ReferencesSelect<true>;
+    boards: BoardsSelect<false> | BoardsSelect<true>;
     media: MediaSelect<false> | MediaSelect<true>;
     users: UsersSelect<false> | UsersSelect<true>;
     folders: FoldersSelect<false> | FoldersSelect<true>;
@@ -281,6 +283,7 @@ export interface Reference {
     articleUrl?: string | null;
     credit?: string | null;
   };
+  addedBy?: (number | null) | User;
   width?: number | null;
   height?: number | null;
   createdBy?: {
@@ -464,6 +467,34 @@ export interface Tag {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "boards".
+ */
+export interface Board {
+  id: number;
+  name: string;
+  parent?: (number | null) | Board;
+  description?: string | null;
+  items?:
+    | {
+        reference: number | Reference;
+        note?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  owner?: (number | null) | User;
+  createdBy?: {
+    relationTo: 'users';
+    value: number | User;
+  } | null;
+  updatedBy?: {
+    relationTo: 'users';
+    value: number | User;
+  } | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv".
  */
 export interface PayloadKv {
@@ -489,6 +520,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'references';
         value: number | Reference;
+      } | null)
+    | ({
+        relationTo: 'boards';
+        value: number | Board;
       } | null)
     | ({
         relationTo: 'media';
@@ -604,8 +639,30 @@ export interface ReferencesSelect<T extends boolean = true> {
         articleUrl?: T;
         credit?: T;
       };
+  addedBy?: T;
   width?: T;
   height?: T;
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "boards_select".
+ */
+export interface BoardsSelect<T extends boolean = true> {
+  name?: T;
+  parent?: T;
+  description?: T;
+  items?:
+    | T
+    | {
+        reference?: T;
+        note?: T;
+        id?: T;
+      };
+  owner?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;
@@ -834,7 +891,7 @@ export interface CollectionsWidget {
 export interface CollectionQueryWidget {
   data?: {
     title?: string | null;
-    relatedCollection: 'references' | 'media' | 'users' | 'folders' | 'tags';
+    relatedCollection: 'references' | 'boards' | 'media' | 'users' | 'folders' | 'tags';
     where?:
       | {
           [k: string]: unknown;
@@ -856,7 +913,7 @@ export interface CollectionQueryWidget {
  */
 export interface ActivityWidget {
   data?: {
-    excludedCollections?: ('references' | 'media' | 'users' | 'folders' | 'tags')[] | null;
+    excludedCollections?: ('references' | 'boards' | 'media' | 'users' | 'folders' | 'tags')[] | null;
   };
   width: 'small' | 'medium' | 'large' | 'x-large' | 'full';
 }

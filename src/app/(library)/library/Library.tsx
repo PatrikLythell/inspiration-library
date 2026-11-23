@@ -21,6 +21,8 @@ type Card = {
 }
 
 type Facet = { value: string; count: number }
+type Board = { id: number; name: string; parent: number | null; count: number; covers: string[] }
+const REF_MIME = 'application/x-reference-ids'
 type TagMap = Record<string, string[]>
 
 const PAGE = 60
@@ -78,8 +80,19 @@ async function api<T>(path: string, body?: unknown): Promise<T> {
   return res.json()
 }
 
-/** Shrinks a dropped or pasted image so the request stays small. */
-function downscale(file: Blob, max = 768): Promise<string> {
+async function boardsApi<T>(path: string, body?: unknown, method?: string): Promise<T> {
+  const res = await fetch(`/api/boards${path}`, {
+    method: method ?? (body === undefined ? 'GET' : 'POST'),
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`${res.status}`)
+  return res.json()
+}
+
+/** Shrinks a dropped or pasted image so the request stays small (2400 px keeps uploads under the 4.5 MB limit). */
+function downscale(file: Blob, max = 768, quality = 0.85): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image()
     img.onload = () => {
@@ -89,7 +102,7 @@ function downscale(file: Blob, max = 768): Promise<string> {
       c.height = Math.round(img.height * s)
       c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height)
       URL.revokeObjectURL(img.src)
-      resolve(c.toDataURL('image/jpeg', 0.85))
+      resolve(c.toDataURL('image/jpeg', quality))
     }
     img.onerror = reject
     img.src = URL.createObjectURL(file)
@@ -119,7 +132,7 @@ function justify(cards: Card[], width: number, target: number): Row[] {
   return rows
 }
 
-export function Library({ initialRef }: { initialRef?: number }) {
+export function Library({ initialRef, initialBoard }: { initialRef?: number; initialBoard?: number }) {
   const [raw, setRaw] = useState('')
   const [debounced, setDebounced] = useState('')
   const [include, setInclude] = useState<TagMap>({})
@@ -141,6 +154,15 @@ export function Library({ initialRef }: { initialRef?: number }) {
   const [lightbox, setLightbox] = useState<Card | null>(null)
   const [dragging, setDragging] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const [boards, setBoards] = useState<Board[]>([])
+  const [board, setBoard] = useState<number | null>(initialBoard ?? null)
+  const [boardDrop, setBoardDrop] = useState<number | null>(null)
+  const [picker, setPicker] = useState<number[] | null>(null)
+  const [newBoard, setNewBoard] = useState<string | null>(null)
+  const [adding, setAdding] = useState(0)
+  const [dropZone, setDropZone] = useState<'search' | 'add' | null>(null)
+  const queryBlob = useRef<Blob | string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
   const sentinel = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -174,7 +196,9 @@ export function Library({ initialRef }: { initialRef?: number }) {
         const offset = reset ? 0 : cards.length
         const t0 = performance.now()
         let res: { results: Card[]; total?: number }
-        if (similarTo) {
+        if (board) {
+          res = reset ? await boardsApi(`/${board}/cards`) : { results: [] }
+        } else if (similarTo) {
           res = reset ? await api('/similar', { ids: similarTo, limit: 96, filters }) : { results: [] }
         } else {
           res = await api('/search', {
@@ -190,7 +214,7 @@ export function Library({ initialRef }: { initialRef?: number }) {
         setMs(Math.round(performance.now() - t0))
         setCards((prev) => (reset ? res.results : [...prev, ...res.results]))
         setTotal(res.total ?? null)
-        setHasMore(!similarTo && res.results.length === PAGE)
+        setHasMore(!board && !similarTo && res.results.length === PAGE)
         if (reset) {
           setFocus(0)
           gridRef.current?.scrollTo({ top: 0 })
@@ -201,18 +225,123 @@ export function Library({ initialRef }: { initialRef?: number }) {
         if (id === reqId.current) setLoading(false)
       }
     },
-    [cards.length, similarTo, filters, parsed.words, imageQuery, colors],
+    [cards.length, board, similarTo, filters, parsed.words, imageQuery, colors],
   )
 
   // New query or filters: start over.
   useEffect(() => {
     void load(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, parsed.words, imageQuery, colors, similarTo])
+  }, [filters, parsed.words, imageQuery, colors, similarTo, board])
 
   useEffect(() => {
     api<Record<string, Facet[]>>('/facets', { filters }).then(setFacets).catch(() => undefined)
   }, [filters])
+
+  const loadBoards = useCallback(() => {
+    boardsApi<{ boards: Board[] }>('/overview')
+      .then((r) => setBoards(r.boards))
+      .catch(() => undefined)
+  }, [])
+  useEffect(loadBoards, [loadBoards])
+
+  const boardName = boards.find((b) => b.id === board)?.name ?? 'Board'
+
+  const putOnBoard = useCallback(
+    async (boardId: number, ids: number[]) => {
+      try {
+        await boardsApi(`/${boardId}/items`, { add: ids })
+        setToast(`Added ${ids.length === 1 ? '1 reference' : `${ids.length} references`} to ${boards.find((b) => b.id === boardId)?.name ?? 'board'}`)
+        loadBoards()
+        if (board === boardId) void load(true)
+      } catch {
+        setToast('Could not add to the board')
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [boards, board, loadBoards],
+  )
+
+  const createBoard = async (name: string, ids: number[] = []) => {
+    const n = name.trim()
+    if (!n) return
+    try {
+      const { doc } = await boardsApi<{ doc: { id: number } }>('', { name: n })
+      if (ids.length) await boardsApi(`/${doc.id}/items`, { add: ids })
+      setToast(ids.length ? `Created ${n} with ${ids.length} reference${ids.length > 1 ? 's' : ''}` : `Created ${n}`)
+      loadBoards()
+      return doc.id
+    } catch {
+      setToast('Could not create the board')
+    }
+  }
+
+  const removeFromBoard = async (ids: number[]) => {
+    if (!board) return
+    await boardsApi(`/${board}/items`, { remove: ids }).catch(() => undefined)
+    setCards((cs) => cs.filter((c) => !ids.includes(c.id)))
+    setSelected(new Set())
+    loadBoards()
+  }
+
+  const deleteBoard = async (id: number) => {
+    if (!window.confirm(`Delete the board “${boards.find((b) => b.id === id)?.name}”? The references stay in the library.`)) return
+    await boardsApi(`/${id}`, undefined, 'DELETE').catch(() => undefined)
+    if (board === id) setBoard(null)
+    loadBoards()
+  }
+
+  const openBoard = (id: number | null) => {
+    setBoard(id)
+    setSelected(new Set())
+    setSimilarTo(null)
+    setImageQuery(null)
+    const u = new URL(window.location.href)
+    if (id) u.searchParams.set('board', String(id))
+    else u.searchParams.delete('board')
+    u.searchParams.delete('ref')
+    window.history.replaceState(null, '', u)
+  }
+
+  /** Adds images (files or links) to the library, and to the open board. */
+  const addToLibrary = async (items: (Blob | string)[], target: number | null = board) => {
+    if (!items.length) return
+    setAdding((n) => n + items.length)
+    let added = 0
+    let dupes = 0
+    let failed = 0
+    await Promise.all(
+      items.map(async (it) => {
+        try {
+          const body =
+            typeof it === 'string'
+              ? { url: it, board: target }
+              : { image: await downscale(it, 2400, 0.9), filename: (it as File).name, board: target }
+          const res = await fetch('/api/references/add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(body),
+          })
+          const j = await res.json()
+          if (!res.ok) throw new Error(j.error)
+          if (j.duplicate) dupes++
+          else added++
+        } catch {
+          failed++
+        } finally {
+          setAdding((n) => n - 1)
+        }
+      }),
+    )
+    setToast(
+      [added && `Added ${added}`, dupes && `${dupes} already in the library`, failed && `${failed} failed`]
+        .filter(Boolean)
+        .join(' · ') + (target && added + dupes ? ` → ${boards.find((b) => b.id === target)?.name ?? 'board'}` : ''),
+    )
+    loadBoards()
+    if (!target || target === board) void load(true)
+  }
 
   // Infinite scroll.
   useEffect(() => {
@@ -277,6 +406,7 @@ export function Library({ initialRef }: { initialRef?: number }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = (e.target as HTMLElement)?.tagName === 'INPUT'
+      if (picker && !typing && e.key !== 'Escape') return
       if (typing) {
         if (e.key === 'Escape') (e.target as HTMLInputElement).blur()
         return
@@ -287,7 +417,8 @@ export function Library({ initialRef }: { initialRef?: number }) {
         return
       }
       if (e.key === 'Escape') {
-        if (lightbox) setLightbox(null)
+        if (picker) setPicker(null)
+        else if (lightbox) setLightbox(null)
         else if (selected.size) setSelected(new Set())
         else if (similarTo) setSimilarTo(null)
         return
@@ -318,6 +449,11 @@ export function Library({ initialRef }: { initialRef?: number }) {
         setLightbox(lightbox ? null : cards[focus])
       } else if (e.key === 's' || e.key === 'S') {
         moreLikeThese(selected.size ? [...selected] : [cards[focus].id])
+      } else if (e.key === 'b' || e.key === 'B') {
+        e.preventDefault()
+        setPicker(selected.size ? [...selected] : [cards[focus].id])
+      } else if ((e.key === 'Backspace' || e.key === 'Delete') && board) {
+        void removeFromBoard(selected.size ? [...selected] : [cards[focus].id])
       } else if (e.key === 'x' || e.key === 'X') {
         const id = cards[focus].id
         setSelected((s) => {
@@ -330,12 +466,14 @@ export function Library({ initialRef }: { initialRef?: number }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [cards, focus, lightbox, selected, similarTo, rows, rowOf, moreLikeThese])
+  }, [cards, focus, lightbox, selected, similarTo, rows, rowOf, moreLikeThese, picker, board])
 
   // Drop or paste an image (or image URL) anywhere to search by it.
   const searchByBlob = async (blob: Blob) => {
     try {
       const url = await downscale(blob)
+      queryBlob.current = blob
+      setBoard(null)
       setSimilarTo(null)
       setImageQuery(url)
     } catch {
@@ -351,23 +489,53 @@ export function Library({ initialRef }: { initialRef?: number }) {
     window.addEventListener('paste', onPaste)
     return () => window.removeEventListener('paste', onPaste)
   }, [])
-  const onDrop = (e: React.DragEvent) => {
+  const external = (e: React.DragEvent) => !e.dataTransfer.types.includes(REF_MIME)
+  const onDrop = (e: React.DragEvent, mode: 'search' | 'add' = 'search') => {
     e.preventDefault()
     setDragging(false)
-    const file = [...e.dataTransfer.files].find((f) => f.type.startsWith('image/'))
-    if (file) return void searchByBlob(file)
-    const url = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain')
-    if (/^https?:\/\//.test(url)) {
-      setSimilarTo(null)
-      setImageQuery(url.trim())
+    setDropZone(null)
+    if (!external(e)) return
+    const files = [...e.dataTransfer.files].filter((f) => f.type.startsWith('image/'))
+    const url = (e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain')).trim()
+    if (mode === 'add') {
+      if (files.length) return void addToLibrary(files)
+      if (/^https?:\/\//.test(url)) return void addToLibrary([url])
+      return
     }
+    if (files[0]) return void searchByBlob(files[0])
+    if (/^https?:\/\//.test(url)) {
+      queryBlob.current = url
+      setBoard(null)
+      setSimilarTo(null)
+      setImageQuery(url)
+    }
+  }
+  const dragIds = (e: React.DragEvent, id: number) => {
+    const ids = selected.has(id) ? [...selected] : [id]
+    e.dataTransfer.setData(REF_MIME, JSON.stringify(ids))
+    e.dataTransfer.effectAllowed = 'copy'
+  }
+  const dropOnBoard = (e: React.DragEvent, boardId: number) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setBoardDrop(null)
+    setDragging(false)
+    const raw = e.dataTransfer.getData(REF_MIME)
+    if (raw) return void putOnBoard(boardId, JSON.parse(raw))
+    // Files or links dropped on a board: add them to the library and that board.
+    const files = [...e.dataTransfer.files].filter((f) => f.type.startsWith('image/'))
+    const url = (e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain')).trim()
+    if (files.length) void addToLibrary(files, boardId)
+    else if (/^https?:\/\//.test(url)) void addToLibrary([url], boardId)
   }
 
   const filterChips = [
     ...Object.entries(include).flatMap(([c, vs]) => vs.map((v) => ({ c, v, ex: false }))),
     ...Object.entries(exclude).flatMap(([c, vs]) => vs.map((v) => ({ c, v, ex: true }))),
   ]
-  const modeLabel = similarTo
+  const modeLabel = board
+    ? `Board: ${boardName}`
+    : similarTo
     ? `Similar to ${similarTo.length === 1 ? 'one reference' : `${similarTo.length} references`}`
     : imageQuery
       ? 'Searching by image'
@@ -380,17 +548,80 @@ export function Library({ initialRef }: { initialRef?: number }) {
       className="lib"
       onDragOver={(e) => {
         e.preventDefault()
-        setDragging(true)
+        if (external(e)) setDragging(true)
       }}
       onDragLeave={(e) => {
-        if (e.currentTarget === e.target) setDragging(false)
+        if (!e.relatedTarget || !(e.currentTarget as Node).contains(e.relatedTarget as Node)) setDragging(false)
       }}
-      onDrop={onDrop}
+      onDrop={(e) => onDrop(e, 'search')}
     >
       <aside className="lib-side">
         <div className="lib-brand">
           <span className="lib-logo" aria-hidden>◐</span> Library
         </div>
+
+        <section className="lib-section">
+          <h3 className="lib-boardhead">
+            Boards
+            <button className="lib-link" title="New board" onClick={() => setNewBoard('')}>
+              + New
+            </button>
+          </h3>
+          <ul className="lib-boards">
+            <li className={board === null ? 'on' : ''} onClick={() => openBoard(null)}>
+              <span className="lib-bcover all">◐</span>
+              <span className="lib-bname">All references</span>
+            </li>
+            {sortBoards(boards).map(({ b, depth }) => (
+              <li
+                key={b.id}
+                className={`${board === b.id ? 'on' : ''}${boardDrop === b.id ? ' drop' : ''}`}
+                style={{ paddingLeft: 6 + depth * 14 }}
+                onClick={() => openBoard(b.id)}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setBoardDrop(b.id)
+                }}
+                onDragLeave={() => setBoardDrop((d) => (d === b.id ? null : d))}
+                onDrop={(e) => dropOnBoard(e, b.id)}
+                title="Drop references or images here"
+              >
+                <span className="lib-bcover">{b.covers?.[0] ? <img src={b.covers[0]} alt="" /> : null}</span>
+                <span className="lib-bname">{b.name}</span>
+                <em>{b.count}</em>
+                <button
+                  className="lib-bdel"
+                  title="Delete board"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void deleteBoard(b.id)
+                  }}
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+            {newBoard !== null && (
+              <li className="lib-bnew">
+                <input
+                  autoFocus
+                  value={newBoard}
+                  placeholder="Board name, Enter to create"
+                  onChange={(e) => setNewBoard(e.target.value)}
+                  onBlur={() => setNewBoard(null)}
+                  onKeyDown={async (e) => {
+                    if (e.key === 'Enter') {
+                      const id = await createBoard(newBoard)
+                      setNewBoard(null)
+                      if (id) openBoard(id)
+                    }
+                  }}
+                />
+              </li>
+            )}
+          </ul>
+        </section>
 
         <section className="lib-section">
           <h3>Colour</h3>
@@ -481,12 +712,33 @@ export function Library({ initialRef }: { initialRef?: number }) {
             {imageQuery && (
               <span className="lib-imgchip">
                 <img src={imageQuery} alt="" />
+                <button
+                  className="lib-save"
+                  title="Add this image to the library"
+                  onClick={() => queryBlob.current && void addToLibrary([queryBlob.current])}
+                >
+                  Save to library
+                </button>
                 <button onClick={() => setImageQuery(null)} aria-label="Stop searching by image">
                   ×
                 </button>
               </span>
             )}
           </div>
+          <button className="lib-add" onClick={() => fileRef.current?.click()} title="Add your own images (or drop them on the page)">
+            {adding ? `Adding ${adding}…` : '+ Add'}
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+            onChange={(e) => {
+              void addToLibrary([...(e.target.files ?? [])])
+              e.target.value = ''
+            }}
+          />
           <label className="lib-zoom" title="Thumbnail size">
             <span>▫</span>
             <input type="range" min={110} max={420} value={rowH} onChange={(e) => setRowH(Number(e.target.value))} />
@@ -513,6 +765,11 @@ export function Library({ initialRef }: { initialRef?: number }) {
               {v} ×
             </button>
           ))}
+          {board && (
+            <button className="lib-link" onClick={() => openBoard(null)}>
+              Back to all
+            </button>
+          )}
           {(filterChips.length > 0 || colors.length > 0 || similarTo || imageQuery || raw) && (
             <button className="lib-link" onClick={clearAll}>
               Clear all
@@ -532,6 +789,8 @@ export function Library({ initialRef }: { initialRef?: number }) {
                     data-idx={index}
                     className={`lib-card${index === focus ? ' focus' : ''}${selected.has(card.id) ? ' sel' : ''}`}
                     style={{ width: w, height: r.h, background: card.palette[0] ?? '#2a2a2d' }}
+                    draggable
+                    onDragStart={(e) => dragIds(e, card.id)}
                     onClick={(e) => {
                       if (e.metaKey || e.ctrlKey || e.shiftKey) {
                         setFocus(index)
@@ -563,12 +822,28 @@ export function Library({ initialRef }: { initialRef?: number }) {
                     >
                       ≈
                     </button>
+                    {board && (
+                      <button
+                        className="lib-more lib-remove"
+                        title="Remove from board (Delete)"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          void removeFromBoard([card.id])
+                        }}
+                      >
+                        −
+                      </button>
+                    )}
                   </figure>
                 )
               })}
             </div>
           ))}
-          {!loading && cards.length === 0 && <p className="lib-empty">Nothing matches. Try fewer filters.</p>}
+          {!loading && cards.length === 0 && (
+            <p className="lib-empty">
+              {board ? 'This board is empty. Drag references onto it in the sidebar, press B, or drop images here.' : 'Nothing matches. Try fewer filters.'}
+            </p>
+          )}
           <div ref={sentinel} style={{ height: 1 }} />
         </div>
 
@@ -576,6 +851,8 @@ export function Library({ initialRef }: { initialRef?: number }) {
           <div className="lib-selbar">
             <span>{selected.size} selected</span>
             <button onClick={() => moreLikeThese([...selected])}>More like these (S)</button>
+            <button onClick={() => setPicker([...selected])}>Add to board (B)</button>
+            {board && <button onClick={() => void removeFromBoard([...selected])}>Remove from board</button>}
             <button className="lib-link" onClick={() => setSelected(new Set())}>
               Clear
             </button>
@@ -593,6 +870,7 @@ export function Library({ initialRef }: { initialRef?: number }) {
             setInclude((m) => (m[cat]?.includes(v) ? m : toggle(m, cat, v)))
           }}
           onSimilar={(id) => moreLikeThese([id])}
+          onBoard={(id) => setPicker([id])}
           onCopy={(hex) => {
             void navigator.clipboard?.writeText(hex)
             setToast(`Copied ${hex}`)
@@ -600,7 +878,53 @@ export function Library({ initialRef }: { initialRef?: number }) {
         />
       )}
 
-      {dragging && <div className="lib-drop">Drop an image to find references that look like it</div>}
+      {dragging && (
+        <div className="lib-drop">
+          <div
+            className={`lib-dz${dropZone === 'search' ? ' on' : ''}`}
+            onDragOver={(e) => {
+              e.preventDefault()
+              setDropZone('search')
+            }}
+            onDrop={(e) => {
+              e.stopPropagation()
+              onDrop(e, 'search')
+            }}
+          >
+            <b>Find look-alikes</b>
+            <span>Search by this image</span>
+          </div>
+          <div
+            className={`lib-dz${dropZone === 'add' ? ' on' : ''}`}
+            onDragOver={(e) => {
+              e.preventDefault()
+              setDropZone('add')
+            }}
+            onDrop={(e) => {
+              e.stopPropagation()
+              onDrop(e, 'add')
+            }}
+          >
+            <b>{board ? `Add to ${boardName}` : 'Add to library'}</b>
+            <span>Tagged and searchable in a few seconds</span>
+          </div>
+        </div>
+      )}
+      {picker && (
+        <BoardPicker
+          boards={boards}
+          count={picker.length}
+          onPick={(id) => {
+            void putOnBoard(id, picker)
+            setPicker(null)
+          }}
+          onCreate={async (name) => {
+            await createBoard(name, picker)
+            setPicker(null)
+          }}
+          onClose={() => setPicker(null)}
+        />
+      )}
       {toast && <div className="lib-toast">{toast}</div>}
     </div>
   )
@@ -613,6 +937,7 @@ function Lightbox({
   onTag,
   onSimilar,
   onCopy,
+  onBoard,
 }: {
   card: Card
   onClose: () => void
@@ -620,6 +945,7 @@ function Lightbox({
   onTag: (cat: string, v: string) => void
   onSimilar: (id: number) => void
   onCopy: (hex: string) => void
+  onBoard: (id: number) => void
 }) {
   const [similar, setSimilar] = useState<Card[] | null>(null)
   useEffect(() => {
@@ -643,6 +969,10 @@ function Lightbox({
           ×
         </button>
         <p className="lib-lb-desc">{card.description}</p>
+        <div className="lib-lb-actions">
+          <button onClick={() => onBoard(card.id)}>Add to board (B)</button>
+          <button onClick={() => onSimilar(card.id)}>More like this (S)</button>
+        </div>
         <div className="lib-lb-pal">
           {card.palette.map((p) => (
             <button key={p} title={`Copy ${p}`} onClick={() => onCopy(p)}>
@@ -702,6 +1032,85 @@ function Lightbox({
           ))}
         </div>
       </aside>
+    </div>
+  )
+}
+
+/** Boards in tree order: parents first, children indented under them. */
+function sortBoards(boards: Board[]) {
+  const kids = new Map<number | null, Board[]>()
+  const ids = new Set(boards.map((b) => b.id))
+  for (const b of boards) {
+    const p = b.parent && ids.has(b.parent) ? b.parent : null
+    kids.set(p, [...(kids.get(p) ?? []), b])
+  }
+  const out: { b: Board; depth: number }[] = []
+  const walk = (p: number | null, depth: number) => {
+    for (const b of kids.get(p) ?? []) {
+      out.push({ b, depth })
+      if (depth < 6) walk(b.id, depth + 1)
+    }
+  }
+  walk(null, 0)
+  return out
+}
+
+function BoardPicker({
+  boards,
+  count,
+  onPick,
+  onCreate,
+  onClose,
+}: {
+  boards: Board[]
+  count: number
+  onPick: (id: number) => void
+  onCreate: (name: string) => void
+  onClose: () => void
+}) {
+  const [q, setQ] = useState('')
+  const [hi, setHi] = useState(0)
+  const list = boards.filter((b) => b.name.toLowerCase().includes(q.trim().toLowerCase()))
+  const canCreate = q.trim() && !boards.some((b) => b.name.toLowerCase() === q.trim().toLowerCase())
+  return (
+    <div className="lib-pick-bg" onClick={onClose}>
+      <div className="lib-pick" onClick={(e) => e.stopPropagation()}>
+        <p>
+          Add {count === 1 ? '1 reference' : `${count} references`} to a board
+        </p>
+        <input
+          autoFocus
+          value={q}
+          placeholder="Find or create a board"
+          onChange={(e) => {
+            setQ(e.target.value)
+            setHi(0)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown') setHi((h) => Math.min(h + 1, list.length - (canCreate ? 0 : 1)))
+            else if (e.key === 'ArrowUp') setHi((h) => Math.max(h - 1, 0))
+            else if (e.key === 'Escape') onClose()
+            else if (e.key === 'Enter') {
+              if (list[hi]) onPick(list[hi].id)
+              else if (canCreate) onCreate(q.trim())
+            }
+          }}
+        />
+        <ul>
+          {list.map((b, i) => (
+            <li key={b.id} className={i === hi ? 'on' : ''} onMouseEnter={() => setHi(i)} onClick={() => onPick(b.id)}>
+              <span>{b.name}</span>
+              <em>{b.count}</em>
+            </li>
+          ))}
+          {canCreate && (
+            <li className={hi === list.length ? 'on' : ''} onMouseEnter={() => setHi(list.length)} onClick={() => onCreate(q.trim())}>
+              <span>+ Create “{q.trim()}”</span>
+            </li>
+          )}
+          {!list.length && !canCreate && <li className="lib-pick-empty">Type a name to create your first board</li>}
+        </ul>
+      </div>
     </div>
   )
 }

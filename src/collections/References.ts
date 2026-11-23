@@ -1,6 +1,7 @@
 import type { CollectionConfig } from 'payload'
 
 import {
+  addEndpoint,
   cardEndpoint,
   facetsEndpoint,
   importEndpoint,
@@ -25,7 +26,7 @@ export const References: CollectionConfig = {
   access: {
     read: ({ req }) => Boolean(req.user),
   },
-  endpoints: [importEndpoint, syncTagsEndpoint, searchEndpoint, facetsEndpoint, similarSetEndpoint, similarEndpoint, cardEndpoint],
+  endpoints: [addEndpoint, importEndpoint, syncTagsEndpoint, searchEndpoint, facetsEndpoint, similarSetEndpoint, similarEndpoint, cardEndpoint],
   fields: [
     { name: 'sourceKey', type: 'text', required: true, unique: true, index: true },
     {
@@ -90,6 +91,7 @@ export const References: CollectionConfig = {
         { name: 'credit', type: 'text' },
       ],
     },
+    { name: 'addedBy', type: 'relationship', relationTo: 'users', admin: { readOnly: true } },
     {
       name: 'width',
       type: 'number',

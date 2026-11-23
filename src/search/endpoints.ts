@@ -1,5 +1,6 @@
 import type { Endpoint, PayloadRequest } from 'payload'
 
+import { addReference, fetchImage } from '../import/add'
 import { setVector, syncMediaTags, upsertSidecar } from '../import/sidecar'
 import { hydrate } from './lib'
 import { byPalette, facets, searchReferences, similarReferences } from './service'
@@ -127,5 +128,37 @@ export const cardEndpoint: Endpoint = {
     if (denied) return denied
     const [c] = await hydrate(req.payload, [{ id: Number(req.routeParams?.id), score: 0 }])
     return c ? Response.json(c) : Response.json({ error: 'not found' }, { status: 404 })
+  },
+}
+
+/**
+ * POST /api/references/add {image?: base64 | data URL, url?: image link, filename?, sourceUrl?, credit?, board?, force?}
+ * Adds your own reference: auto-tagged and embedded like the scraped ones. Returns {duplicate, reference}.
+ */
+export const addEndpoint: Endpoint = {
+  path: '/add',
+  method: 'post',
+  handler: async (req) => {
+    const denied = guard(req)
+    if (denied) return denied
+    const b = await body(req)
+    try {
+      let data: Buffer
+      if (typeof b.image === 'string' && b.image) data = Buffer.from(b.image.replace(/^data:[^,]+,/, ''), 'base64')
+      else if (typeof b.url === 'string' && b.url) data = await fetchImage(b.url)
+      else return Response.json({ error: 'image or url required' }, { status: 400 })
+      const out = await addReference(req.payload, {
+        data,
+        filename: b.filename,
+        sourceUrl: b.sourceUrl ?? (b.image ? null : b.url),
+        credit: b.credit ?? null,
+        board: b.board ? Number(b.board) : null,
+        userId: (req.user as any)?.id,
+        force: Boolean(b.force),
+      })
+      return Response.json(out)
+    } catch (e: any) {
+      return Response.json({ error: e?.message ?? 'Could not add the image' }, { status: 422 })
+    }
   },
 }

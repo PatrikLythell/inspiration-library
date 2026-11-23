@@ -504,14 +504,34 @@ button {
 .lib-drop {
   position: fixed;
   inset: 12px;
-  border: 2px dashed var(--accent);
-  border-radius: 14px;
-  background: rgba(79, 140, 255, 0.08);
   display: grid;
-  place-items: center;
-  font-size: 16px;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
   z-index: 30;
+}
+.lib-dz {
+  border: 2px dashed var(--line);
+  border-radius: 14px;
+  background: rgba(20, 20, 22, 0.82);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: border-color 0.12s, background 0.12s;
+}
+.lib-dz b {
+  font-size: 18px;
+  font-weight: 600;
   pointer-events: none;
+}
+.lib-dz span {
+  color: var(--muted);
+  pointer-events: none;
+}
+.lib-dz.on {
+  border-color: var(--accent);
+  background: rgba(79, 140, 255, 0.16);
 }
 .lib-toast {
   position: fixed;
@@ -535,4 +555,162 @@ button {
     grid-template-columns: 1fr;
     grid-template-rows: 55vh 1fr;
   }
+}
+
+/* Boards */
+.lib-boardhead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.lib-boardhead .lib-link {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+}
+.lib-boards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.lib-boards li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+  border: 1px solid transparent;
+}
+.lib-boards li:hover {
+  background: var(--panel-2);
+}
+.lib-boards li.on {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: #fff;
+}
+.lib-boards li.drop {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.lib-bcover {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 4px;
+  background: var(--panel-2);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  color: var(--accent);
+}
+.lib-bcover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.lib-bname {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lib-boards em {
+  font-style: normal;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.lib-bdel {
+  display: none;
+  color: var(--muted);
+  padding: 0 2px;
+}
+.lib-boards li:hover .lib-bdel {
+  display: block;
+}
+.lib-bdel:hover {
+  color: var(--danger);
+}
+.lib-bnew input,
+.lib-pick input {
+  width: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: inherit;
+  padding: 5px 8px;
+  font: inherit;
+  outline: none;
+}
+.lib-add,
+.lib-save,
+.lib-lb-actions button {
+  background: var(--accent);
+  color: #fff;
+  border-radius: 6px;
+  padding: 5px 12px;
+  white-space: nowrap;
+}
+.lib-save {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+.lib-lb-actions {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+.lib-lb-actions button + button {
+  background: var(--panel-2);
+}
+.lib-remove {
+  right: 38px;
+}
+.lib-pick-bg {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: grid;
+  place-items: start center;
+  padding-top: 16vh;
+  z-index: 40;
+}
+.lib-pick {
+  width: min(380px, calc(100vw - 32px));
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.lib-pick p {
+  margin: 0 0 8px;
+  color: var(--muted);
+}
+.lib-pick ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  max-height: 300px;
+  overflow: auto;
+}
+.lib-pick li {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.lib-pick li.on {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.lib-pick em {
+  font-style: normal;
+  color: var(--muted);
+}
+.lib-pick-empty {
+  color: var(--muted);
+  cursor: default !important;
 }
