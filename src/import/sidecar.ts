@@ -141,7 +141,7 @@ async function findOrCreateTag(payload: Payload, name: string, parent: number | 
 export async function syncMediaTags(payload: Payload, mediaId: number, tags: Record<string, string[]>) {
   const ids: number[] = []
   for (const [cat, label] of Object.entries(TAG_CATEGORIES)) {
-    const values = [...new Set((tags?.[cat] ?? []).map((v) => String(v).trim().toLowerCase()).filter(Boolean))]
+    const values = [...new Set((tags?.[cat] ?? []).map((v) => String(v).trim().toLowerCase()).filter((v) => v && !['none', 'n/a', 'na', 'null', 'unknown'].includes(v)))]
     if (!values.length) continue
     const parent = await findOrCreateTag(payload, label, null)
     for (const v of values) ids.push(await findOrCreateTag(payload, v, parent))
