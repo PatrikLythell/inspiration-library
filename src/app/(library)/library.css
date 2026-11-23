@@ -778,3 +778,18 @@ button.lib-crumb:hover {
   background: var(--accent);
   color: #fff;
 }
+.lib-lb-simhead {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.lib-lb-simhead h4 {
+  white-space: nowrap;
+  margin-right: auto;
+}
+.lib-lb-simhead .lib-simswitch {
+  order: 3;
+  flex-basis: 100%;
+  width: max-content;
+  flex-grow: 0;
+}
