@@ -1,6 +1,6 @@
 import type { CollectionConfig } from 'payload'
 
-import { searchEndpoint, similarEndpoint } from '../search/endpoints'
+import { importEndpoint, searchEndpoint, similarEndpoint } from '../search/endpoints'
 
 /**
  * One row per image. Brand and source are provenance only: people search by look,
@@ -17,7 +17,7 @@ export const References: CollectionConfig = {
   access: {
     read: ({ req }) => Boolean(req.user),
   },
-  endpoints: [searchEndpoint, similarEndpoint],
+  endpoints: [importEndpoint, searchEndpoint, similarEndpoint],
   fields: [
     { name: 'sourceKey', type: 'text', required: true, unique: true, index: true },
     {
