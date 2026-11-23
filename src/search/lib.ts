@@ -14,6 +14,8 @@ export type Filters = {
   /** exclude: drop references having any of these values */
   excludeTags?: Record<string, string[]>
   sources?: string[]
+  /** each value must appear in some tag category (from #tag in the search bar) */
+  anyTags?: string[]
 }
 
 export type Hit = { id: number; score: number }
@@ -62,7 +64,7 @@ export async function embed(input: { text?: string; imageUrl?: string }): Promis
 }
 
 /** Builds the WHERE clause for filters; params are appended to `params`. */
-function whereClause(f: Filters, params: unknown[]): string {
+export function whereClause(f: Filters, params: unknown[]): string {
   const parts = [`r.status = 'active'`]
   for (const [cat, values] of Object.entries(f.tags ?? {})) {
     if (!TAG_KEYS.has(cat) || !values?.length) continue
@@ -73,6 +75,11 @@ function whereClause(f: Filters, params: unknown[]): string {
     if (!TAG_KEYS.has(cat) || !values?.length) continue
     params.push(values)
     parts.push(`NOT coalesce((r.tags -> '${cat}') ?| $${params.length}::text[], false)`)
+  }
+  for (const v of f.anyTags ?? []) {
+    if (!v) continue
+    params.push([v, v.toLowerCase()])
+    parts.push(`EXISTS (SELECT 1 FROM jsonb_each(r.tags) e WHERE jsonb_typeof(e.value) = 'array' AND e.value ?| $${params.length}::text[])`)
   }
   if (f.sources?.length) {
     params.push(f.sources)

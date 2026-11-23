@@ -1,7 +1,8 @@
 import type { Endpoint, PayloadRequest } from 'payload'
 
 import { setVector, syncMediaTags, upsertSidecar } from '../import/sidecar'
-import { byPalette, searchReferences, similarReferences } from './service'
+import { hydrate } from './lib'
+import { byPalette, facets, searchReferences, similarReferences } from './service'
 
 const body = async (req: PayloadRequest): Promise<any> => {
   try {
@@ -22,7 +23,7 @@ export const searchEndpoint: Endpoint = {
     const denied = guard(req)
     if (denied) return denied
     const b = await body(req)
-    if (Array.isArray(b.colors) && b.colors.length && !b.query && !b.imageUrl) {
+    if (Array.isArray(b.colors) && b.colors.length && !b.imageUrl) {
       return Response.json(await byPalette(req.payload, b))
     }
     return Response.json(await searchReferences(req.payload, b))
@@ -88,5 +89,43 @@ export const syncTagsEndpoint: Endpoint = {
       tagged++
     }
     return Response.json({ tagged, totalDocs: res.totalDocs, hasNextPage: res.hasNextPage })
+  },
+}
+
+/** POST /api/references/facets {filters?} */
+export const facetsEndpoint: Endpoint = {
+  path: '/facets',
+  method: 'post',
+  handler: async (req) => {
+    const denied = guard(req)
+    if (denied) return denied
+    const b = await body(req)
+    return Response.json(await facets(req.payload, { filters: b.filters }))
+  },
+}
+
+/** POST /api/references/similar {ids: number[], limit?, filters?} = "more like these" */
+export const similarSetEndpoint: Endpoint = {
+  path: '/similar',
+  method: 'post',
+  handler: async (req) => {
+    const denied = guard(req)
+    if (denied) return denied
+    const b = await body(req)
+    const ids = (b.ids ?? []).map(Number).filter(Boolean).slice(0, 50)
+    if (!ids.length) return Response.json({ error: 'ids required' }, { status: 400 })
+    return Response.json(await similarReferences(req.payload, { ids, limit: b.limit ?? 48, filters: b.filters }))
+  },
+}
+
+/** GET /api/references/:id/card — one reference in the shared card shape (deep links). */
+export const cardEndpoint: Endpoint = {
+  path: '/:id/card',
+  method: 'get',
+  handler: async (req) => {
+    const denied = guard(req)
+    if (denied) return denied
+    const [c] = await hydrate(req.payload, [{ id: Number(req.routeParams?.id), score: 0 }])
+    return c ? Response.json(c) : Response.json({ error: 'not found' }, { status: 404 })
   },
 }

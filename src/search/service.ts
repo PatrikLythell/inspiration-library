@@ -1,6 +1,6 @@
 import type { Payload } from 'payload'
 
-import { embed, type Filters, hydrate, nearest, vectorOf } from './lib'
+import { embed, type Filters, hydrate, nearest, vectorOf, whereClause } from './lib'
 import { type Candidate, hexToLab, paletteSimilarity, styleBlend } from './rank'
 
 /** Generic reference capability. Every surface (library UI, MCP tools, REST) calls these. */
@@ -13,17 +13,18 @@ export async function searchReferences(
   const limit = Math.min(args.limit ?? 48, 200)
   if (!args.query && !args.imageUrl) {
     // Browse mode: newest first with filters, no vector needed.
-    const { docs, totalDocs } = await payload.find({
-      collection: 'references',
-      limit,
-      page: Math.floor((args.offset ?? 0) / limit) + 1,
-      sort: '-createdAt',
-      depth: 1,
-      overrideAccess: true,
-      where: { status: { equals: 'active' } },
-    })
-    const { card } = await import('./lib')
-    return { results: docs.map((d) => ({ score: 0, ...card(d) })), total: totalDocs, timings: { totalMs: performance.now() - t0 } }
+    const params: unknown[] = []
+    const where = whereClause(args.filters ?? {}, params)
+    const pool = (payload.db as any).pool
+    const [{ rows }, { rows: count }] = await Promise.all([
+      pool.query(
+        `SELECT r.id FROM "references" r WHERE ${where} ORDER BY r.id DESC LIMIT ${limit} OFFSET ${Math.max(0, Number(args.offset ?? 0))}`,
+        params,
+      ),
+      pool.query(`SELECT count(*)::int AS n FROM "references" r WHERE ${where}`, params),
+    ])
+    const results = await hydrate(payload, rows.map((r: any) => ({ id: Number(r.id), score: 0 })))
+    return { results, total: count[0].n, timings: { totalMs: performance.now() - t0 } }
   }
   const vector = await embed(args.query ? { text: args.query } : { imageUrl: args.imageUrl })
   const t1 = performance.now()
@@ -95,15 +96,68 @@ export async function similarReferences(
 /** Rank references by closeness to a set of colours (hex), optionally filtered. */
 export async function byPalette(
   payload: Payload,
-  args: { colors: string[]; filters?: Filters; limit?: number },
+  args: { colors: string[]; filters?: Filters; limit?: number; offset?: number; query?: string },
 ) {
+  const t0 = performance.now()
   const target = args.colors.map(hexToLab).filter(Boolean) as number[][]
-  const { rows } = await (payload.db as any).pool.query(
-    `SELECT id, palette FROM "references" WHERE status = 'active' AND palette IS NOT NULL`,
-  )
-  const ranked = rows
-    .map((r: any) => ({ id: Number(r.id), score: paletteSimilarity(target, labOf(r.palette)) }))
-    .sort((a: any, b: any) => b.score - a.score)
-    .slice(0, args.limit ?? 48)
-  return { results: await hydrate(payload, ranked) }
+  const limit = Math.min(args.limit ?? 48, 200)
+  const offset = Math.max(0, Number(args.offset ?? 0))
+  let pool: { id: number; palette: any; qrank?: number }[]
+  if (args.query) {
+    // Words + colour: the 400 best matches for the words, re-ranked by colour (rank fusion).
+    const hits = await nearest(payload, await embed({ text: args.query }), { limit: 400, filters: args.filters })
+    const rows = await candidateRows(payload, hits.map((h) => h.id))
+    pool = hits.map((h, i) => ({ id: h.id, palette: rows.get(h.id)?.palette, qrank: i }))
+  } else {
+    const params: unknown[] = []
+    const where = whereClause(args.filters ?? {}, params)
+    const { rows } = await (payload.db as any).pool.query(
+      `SELECT r.id, r.palette FROM "references" r WHERE ${where} AND r.palette IS NOT NULL`,
+      params,
+    )
+    pool = rows.map((r: any) => ({ id: Number(r.id), palette: r.palette }))
+  }
+  const scored = pool.map((r) => ({ ...r, score: paletteSimilarity(target, labOf(r.palette)) }))
+  const byColour = [...scored].sort((a, b) => b.score - a.score)
+  let ranked = byColour
+  if (args.query) {
+    const crank = new Map(byColour.map((r, i) => [r.id, i]))
+    const fused = (r: { id: number; qrank?: number }) => 1 / (60 + (r.qrank ?? 0)) + 1 / (60 + (crank.get(r.id) ?? 0))
+    ranked = [...scored].sort((a, b) => fused(b) - fused(a))
+  }
+  const page = ranked.slice(offset, offset + limit).map((r) => ({ id: r.id, score: r.score }))
+  return { results: await hydrate(payload, page), total: ranked.length, timings: { totalMs: performance.now() - t0 } }
+}
+
+const FACET_KEYS = ['mood', 'style', 'medium', 'subject', 'era_reference', 'typography_style', 'colour_character', 'composition']
+
+/** Counts per tag value (top 40 per category) and per source, over the filtered set. */
+export async function facets(payload: Payload, args: { filters?: Filters }) {
+  const params: unknown[] = []
+  const where = whereClause(args.filters ?? {}, params)
+  const n = params.length
+  const pool = (payload.db as any).pool
+  const [{ rows }, { rows: src }] = await Promise.all([
+    pool.query(
+      `SELECT k.key AS cat, v.val, count(*)::int AS n
+         FROM "references" r, jsonb_each(r.tags) k, jsonb_array_elements_text(k.value) v(val)
+        WHERE ${where} AND k.key = ANY($${n + 1}::text[]) AND jsonb_typeof(k.value) = 'array'
+        GROUP BY 1, 2`,
+      [...params, FACET_KEYS],
+    ),
+    pool.query(
+      `SELECT r.source::text AS val, count(*)::int AS n FROM "references" r WHERE ${where} GROUP BY 1 ORDER BY 2 DESC`,
+      params,
+    ),
+  ])
+  const out: Record<string, { value: string; count: number }[]> = {}
+  for (const k of FACET_KEYS) {
+    out[k] = rows
+      .filter((r: any) => r.cat === k && !['none', 'n/a', 'unknown'].includes(String(r.val).toLowerCase()))
+      .sort((a: any, b: any) => b.n - a.n)
+      .slice(0, 40)
+      .map((r: any) => ({ value: r.val, count: r.n }))
+  }
+  out.source = src.map((r: any) => ({ value: r.val, count: r.n }))
+  return out
 }
