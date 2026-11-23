@@ -46,6 +46,10 @@ const noBuiltins = { tools: Object.fromEntries(BUILTINS.map((k) => [k, false])) 
 export default buildConfig({
   admin: {
     user: Users.slug,
+    components: {
+      // Shown only when GOOGLE_CLIENT_ID/SECRET are set.
+      afterLogin: process.env.GOOGLE_CLIENT_ID ? ['@/components/GoogleLogin'] : [],
+    },
     importMap: {
       baseDir: path.resolve(dirname),
     },
