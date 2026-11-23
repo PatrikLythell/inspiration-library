@@ -4,7 +4,7 @@
 
 One request per reference, 4 in parallel. Idempotent (upserts on sourceKey).
 """
-import base64, json, os, sys, concurrent.futures as cf
+import base64, json, os, sys, time, concurrent.futures as cf
 import requests
 
 BASE, SOURCE, DIR = os.environ['BASE'].rstrip('/'), sys.argv[1], sys.argv[2]
@@ -30,11 +30,17 @@ def one(f):
         body['filename'] = os.path.basename(img)
     if sc['id'] in vec:
         body['vector'] = [float(x) for x in V[vec[sc['id']]]]
-    for attempt in range(3):
-        r = s.post(f'{BASE}/api/references/import', json=body, timeout=120)
-        if r.ok:
-            return True
-    print('failed', f, r.status_code, r.text[:200], flush=True)
+    err = None
+    for attempt in range(5):
+        try:
+            r = s.post(f'{BASE}/api/references/import', json=body, timeout=120)
+            if r.ok:
+                return True
+            err = f'{r.status_code} {r.text[:200]}'
+        except requests.RequestException as e:
+            err = repr(e)[:200]
+        time.sleep(2 ** attempt)
+    print('failed', f, err, flush=True)
     return False
 
 files = sorted(x for x in os.listdir(DIR) if x.endswith('.json'))

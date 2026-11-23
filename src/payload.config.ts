@@ -89,7 +89,8 @@ export default buildConfig({
   storage: [
     vercelBlobStorage({
       enabled: Boolean(process.env.BLOB_READ_WRITE_TOKEN),
-      collections: { media: true },
+      // Images are served straight from the Blob CDN (fast grid, previews readable by MCP clients).
+      collections: { media: { disablePayloadAccessControl: true } },
       token: process.env.BLOB_READ_WRITE_TOKEN,
       clientUploads: true,
     }),
