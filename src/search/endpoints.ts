@@ -40,7 +40,8 @@ export const similarEndpoint: Endpoint = {
     if (denied) return denied
     const id = Number(req.routeParams?.id)
     const limit = Number(new URL(req.url ?? 'http://x').searchParams.get('limit') ?? 24)
-    return Response.json(await similarReferences(req.payload, { ids: [id], limit }))
+    const mode = new URL(req.url ?? 'http://x').searchParams.get('mode') ?? undefined
+    return Response.json(await similarReferences(req.payload, { ids: [id], limit, mode }))
   },
 }
 
@@ -115,7 +116,7 @@ export const similarSetEndpoint: Endpoint = {
     const b = await body(req)
     const ids = (b.ids ?? []).map(Number).filter(Boolean).slice(0, 50)
     if (!ids.length) return Response.json({ error: 'ids required' }, { status: 400 })
-    return Response.json(await similarReferences(req.payload, { ids, limit: b.limit ?? 48, filters: b.filters }))
+    return Response.json(await similarReferences(req.payload, { ids, limit: b.limit ?? 48, filters: b.filters, mode: b.mode }))
   },
 }
 

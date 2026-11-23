@@ -130,6 +130,12 @@ export const referenceTools = {
       type: 'object',
       properties: {
         ids: { type: 'array', items: { type: 'integer' }, minItems: 1 },
+        match: {
+          type: 'string',
+          enum: ['style', 'balanced', 'colour'],
+          default: 'style',
+          description: 'style = same look and feel, colour matters little (default); balanced; colour = mostly the same colours',
+        },
         limit: { type: 'integer', minimum: 1, maximum: 48, default: 12 },
         include_images: { type: 'boolean', default: true },
       },
@@ -137,7 +143,7 @@ export const referenceTools = {
     },
   }).handler(async ({ input, req }) => {
     const i = input as any
-    const { results } = await similarReferences(req.payload, { ids: i.ids, limit: i.limit ?? 12 })
+    const { results } = await similarReferences(req.payload, { ids: i.ids, limit: i.limit ?? 12, mode: i.match })
     return respond(results, i.include_images !== false, req)
   }),
 

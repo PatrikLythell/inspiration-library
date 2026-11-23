@@ -15,7 +15,23 @@ export const STYLE_KEYS = [
   'typography_style',
 ] as const
 
-export const WEIGHTS = { embedding: 0.3, palette: 0.35, style: 0.35 }
+export type Weights = { embedding: number; palette: number; style: number; subject?: number }
+export const WEIGHTS: Weights = { embedding: 0.3, palette: 0.35, style: 0.35 }
+
+/**
+ * How much "similar" leans on colour. 'style' is the default since 2026-11-23 (the original blend
+ * felt colour-heavy: palette 35% plus colour tags inside the style score). Blind check on 16 seeds:
+ * balanced 2.56, style 2.81, no-colour 3.69 mean rank, i.e. style costs little and colour-free is worse.
+ */
+export type SimilarMode = 'style' | 'balanced' | 'colour'
+const NO_COLOUR_TAGS = STYLE_KEYS.filter((k) => k !== 'colour_character')
+export const SIMILAR_MODES: Record<SimilarMode, { weights: Weights; styleKeys: readonly string[] }> = {
+  style: { weights: { embedding: 0.4, palette: 0.15, style: 0.45 }, styleKeys: NO_COLOUR_TAGS },
+  balanced: { weights: WEIGHTS, styleKeys: STYLE_KEYS },
+  colour: { weights: { embedding: 0.2, palette: 0.6, style: 0.2 }, styleKeys: STYLE_KEYS },
+}
+export const similarMode = (m: unknown): SimilarMode =>
+  m === 'balanced' || m === 'colour' ? m : 'style'
 
 export type Candidate = {
   id: number
@@ -49,8 +65,8 @@ export function paletteSimilarity(a: number[][], b: number[][]): number {
   return -0.5 * (ab + ba)
 }
 
-const styleSet = (tags: Record<string, string[]>) =>
-  new Set(STYLE_KEYS.flatMap((k) => (tags?.[k] ?? []).map((v) => `${k}:${v}`)))
+const styleSet = (tags: Record<string, string[]>, keys: readonly string[] = STYLE_KEYS) =>
+  new Set(keys.flatMap((k) => (tags?.[k] ?? []).map((v) => `${k}:${v}`)))
 
 function styleCosine(a: Set<string>, b: Set<string>): number {
   if (!a.size || !b.size) return 0
@@ -71,19 +87,27 @@ export function styleBlend(
   candidates: Candidate[],
   k = 24,
   perBrand = 2,
+  weights: Weights = WEIGHTS,
+  styleKeys: readonly string[] = STYLE_KEYS,
 ): { id: number; score: number; embedding: number }[] {
   const pool = candidates.filter((c) => c.id !== query.id && (!query.brand || c.brand !== query.brand))
   if (!pool.length) return []
-  const qs = styleSet(query.tags)
+  const qs = styleSet(query.tags, styleKeys)
+  const qsub = styleSet(query.tags, ['subject'])
   const ze = zscores(pool.map((c) => c.score))
   const zp = zscores(pool.map((c) => paletteSimilarity(query.lab, c.lab)))
-  const zs = zscores(pool.map((c) => styleCosine(qs, styleSet(c.tags))))
+  const zs = zscores(pool.map((c) => styleCosine(qs, styleSet(c.tags, styleKeys))))
+  const zsub = weights.subject ? zscores(pool.map((c) => styleCosine(qsub, styleSet(c.tags, ['subject'])))) : null
   const scored = pool
     .map((c, i) => ({
       id: c.id,
       brand: c.brand,
       embedding: c.score,
-      score: WEIGHTS.embedding * ze[i] + WEIGHTS.palette * zp[i] + WEIGHTS.style * zs[i],
+      score:
+        weights.embedding * ze[i] +
+        weights.palette * zp[i] +
+        weights.style * zs[i] +
+        (zsub ? (weights.subject ?? 0) * zsub[i] : 0),
     }))
     .sort((a, b) => b.score - a.score)
   const perBrandCount = new Map<string, number>()

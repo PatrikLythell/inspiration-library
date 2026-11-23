@@ -158,6 +158,25 @@ function paramsToView(p: URLSearchParams, localImg?: string | null): View {
   }
 }
 
+type SimMode = 'style' | 'balanced' | 'colour'
+const SIM_MODES: { id: SimMode; label: string; title: string }[] = [
+  { id: 'style', label: 'Look', title: 'Same look and feel; colour matters little' },
+  { id: 'balanced', label: 'Balanced', title: 'Look and colour equally' },
+  { id: 'colour', label: 'Colour', title: 'Mostly the same colours' },
+]
+
+function SimSwitch({ mode, onChange }: { mode: SimMode; onChange: (m: SimMode) => void }) {
+  return (
+    <span className="lib-simswitch" role="group" aria-label="Match similar by">
+      {SIM_MODES.map((m) => (
+        <button key={m.id} className={mode === m.id ? 'on' : ''} title={m.title} onClick={() => onChange(m.id)}>
+          {m.label}
+        </button>
+      ))}
+    </span>
+  )
+}
+
 type Crumb = { label: string; depth: number }
 type NavState = { depth: number; crumbs: Crumb[]; img?: string | null; closeBack?: boolean }
 
@@ -193,6 +212,19 @@ export function Library({ initial }: { initial: string }) {
   const [colors, setColors] = useState<string[]>(start.colors)
   const [imageQuery, setImageQuery] = useState<string | null>(start.img)
   const [similarTo, setSimilarTo] = useState<number[] | null>(start.sim)
+  const [simMode, setSimModeState] = useState<SimMode>('style')
+  useEffect(() => {
+    try {
+      const m = localStorage.getItem('lib-sim-mode')
+      if (m === 'balanced' || m === 'colour') setSimModeState(m)
+    } catch {}
+  }, [])
+  const setSimMode = (m: SimMode) => {
+    setSimModeState(m)
+    try {
+      localStorage.setItem('lib-sim-mode', m)
+    } catch {}
+  }
   const [refId, setRefId] = useState<number | null>(start.ref)
   const [nav, setNav] = useState<NavState>({ depth: 0, crumbs: [] })
   const [cards, setCards] = useState<Card[]>([])
@@ -254,7 +286,7 @@ export function Library({ initial }: { initial: string }) {
         if (board) {
           res = reset ? await boardsApi(`/${board}/cards`) : { results: [] }
         } else if (similarTo) {
-          res = reset ? await api('/similar', { ids: similarTo, limit: 96, filters }) : { results: [] }
+          res = reset ? await api('/similar', { ids: similarTo, limit: 96, filters, mode: simMode }) : { results: [] }
         } else {
           res = await api('/search', {
             query: parsed.words || undefined,
@@ -280,14 +312,14 @@ export function Library({ initial }: { initial: string }) {
         if (id === reqId.current) setLoading(false)
       }
     },
-    [cards.length, board, similarTo, filters, parsed.words, imageQuery, colors],
+    [cards.length, board, similarTo, filters, parsed.words, imageQuery, colors, simMode],
   )
 
   // New query or filters: start over.
   useEffect(() => {
     void load(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, parsed.words, imageQuery, colors, similarTo, board])
+  }, [filters, parsed.words, imageQuery, colors, similarTo, board, simMode])
 
   useEffect(() => {
     api<Record<string, Facet[]>>('/facets', { filters }).then(setFacets).catch(() => undefined)
@@ -917,6 +949,7 @@ export function Library({ initial }: { initial: string }) {
         )}
         <div className="lib-status">
           <strong>{modeLabel}</strong>
+          {similarTo && <SimSwitch mode={simMode} onChange={setSimMode} />}
           {total !== null && <span>{total.toLocaleString()} refs</span>}
           {ms !== null && <span>{ms} ms</span>}
           {colors.map((c) => (
@@ -1034,6 +1067,8 @@ export function Library({ initial }: { initial: string }) {
           card={lightbox}
           onClose={closeLightbox}
           onBack={nav.depth > 0 ? () => window.history.back() : undefined}
+          simMode={simMode}
+          onSimMode={setSimMode}
           onOpen={setLightbox}
           onTag={(cat, v) => {
             setLightbox(null)
@@ -1109,6 +1144,8 @@ function Lightbox({
   onCopy,
   onBoard,
   onBack,
+  simMode,
+  onSimMode,
 }: {
   card: Card
   onClose: () => void
@@ -1118,18 +1155,20 @@ function Lightbox({
   onCopy: (hex: string) => void
   onBoard: (id: number) => void
   onBack?: () => void
+  simMode: SimMode
+  onSimMode: (m: SimMode) => void
 }) {
   const [similar, setSimilar] = useState<Card[] | null>(null)
   useEffect(() => {
     setSimilar(null)
     let live = true
-    api<{ results: Card[] }>(`/${card.id}/similar?limit=24`)
+    api<{ results: Card[] }>(`/${card.id}/similar?limit=24&mode=${simMode}`)
       .then((r) => live && setSimilar(r.results))
       .catch(() => live && setSimilar([]))
     return () => {
       live = false
     }
-  }, [card.id])
+  }, [card.id, simMode])
 
   return (
     <div className="lib-lb" onClick={onClose}>
@@ -1196,6 +1235,7 @@ function Lightbox({
           ))}
         <div className="lib-lb-simhead">
           <h4>Looks like</h4>
+          <SimSwitch mode={simMode} onChange={onSimMode} />
           <button className="lib-link" onClick={() => onSimilar(card.id)}>
             Open all as results (S)
           </button>

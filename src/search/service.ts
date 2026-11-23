@@ -1,7 +1,7 @@
 import type { Payload } from 'payload'
 
 import { embed, type Filters, hydrate, nearest, vectorOf, whereClause } from './lib'
-import { type Candidate, hexToLab, paletteSimilarity, styleBlend } from './rank'
+import { type Candidate, type Weights, SIMILAR_MODES, hexToLab, paletteSimilarity, similarMode, styleBlend } from './rank'
 
 /** Generic reference capability. Every surface (library UI, MCP tools, REST) calls these. */
 
@@ -55,7 +55,7 @@ const labOf = (palette: any): number[][] =>
 /** Look-alikes for one or more references (several = "more like these", using the mean vector). */
 export async function similarReferences(
   payload: Payload,
-  args: { ids: number[]; limit?: number; filters?: Filters; candidates?: number },
+  args: { ids: number[]; limit?: number; filters?: Filters; candidates?: number; mode?: string; weights?: Weights; styleKeys?: readonly string[] },
 ) {
   const t0 = performance.now()
   const vectors = (await Promise.all(args.ids.map((id) => vectorOf(payload, id)))).filter(Boolean) as number[][]
@@ -81,7 +81,8 @@ export async function similarReferences(
       const r = rows.get(h.id)
       return { id: h.id, score: h.score, brand: r?.brand ?? '', tags: r?.tags ?? {}, lab: labOf(r?.palette) }
     })
-  const ranked = styleBlend(query, candidates, args.limit ?? 24)
+  const preset = SIMILAR_MODES[similarMode(args.mode)]
+  const ranked = styleBlend(query, candidates, args.limit ?? 24, 2, args.weights ?? preset.weights, args.styleKeys ?? preset.styleKeys)
   const t2 = performance.now()
   const results = await hydrate(
     payload,
