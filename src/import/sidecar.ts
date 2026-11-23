@@ -81,9 +81,11 @@ export async function upsertSidecar(
     data.width = media.width
     data.height = media.height
   }
-  const doc = prev
+  const doc: any = prev
     ? await payload.update({ collection: 'references', id: prev.id, data, overrideAccess: true })
     : await payload.create({ collection: 'references', data, overrideAccess: true })
+  const mediaId = typeof doc.image === 'object' ? doc.image?.id : doc.image
+  if (mediaId) await syncMediaTags(payload, Number(mediaId), data.tags)
   return doc
 }
 
@@ -95,4 +97,55 @@ export async function setVector(payload: Payload, id: number | string, vector: n
     `UPDATE "references" SET embedding = $1::halfvec(3072), embedding_1536 = $2::halfvec(1536) WHERE id = $3`,
     [toLiteral(full), toLiteral(short), id],
   )
+}
+
+/** Tag categories mirrored into the hierarchical Tags collection (keywords stay search-only: too many and too noisy). */
+const TAG_CATEGORIES: Record<string, string> = {
+  mood: 'Mood',
+  style: 'Style',
+  medium: 'Medium',
+  subject: 'Subject',
+  composition: 'Composition',
+  colour_character: 'Colour',
+  era_reference: 'Era',
+  typography_style: 'Typography',
+}
+
+const tagCache = new Map<string, number>()
+
+async function findOrCreateTag(payload: Payload, name: string, parent: number | null): Promise<number> {
+  const key = `${parent ?? 'root'}/${name.toLowerCase()}`
+  const hit = tagCache.get(key)
+  if (hit) return hit
+  const { docs } = await payload.find({
+    collection: 'tags',
+    where: {
+      and: [
+        { name: { equals: name } },
+        parent ? { _h_tags: { equals: parent } } : { _h_tags: { exists: false } },
+      ],
+    },
+    limit: 1,
+    depth: 0,
+    overrideAccess: true,
+  })
+  const id = Number(
+    docs[0]?.id ??
+      (await payload.create({ collection: 'tags', data: { name, _h_tags: parent } as any, overrideAccess: true })).id,
+  )
+  tagCache.set(key, id)
+  return id
+}
+
+/** Puts a reference's sidecar tags on its image as Category > value tags, so the asset views show them. */
+export async function syncMediaTags(payload: Payload, mediaId: number, tags: Record<string, string[]>) {
+  const ids: number[] = []
+  for (const [cat, label] of Object.entries(TAG_CATEGORIES)) {
+    const values = [...new Set((tags?.[cat] ?? []).map((v) => String(v).trim().toLowerCase()).filter(Boolean))]
+    if (!values.length) continue
+    const parent = await findOrCreateTag(payload, label, null)
+    for (const v of values) ids.push(await findOrCreateTag(payload, v, parent))
+  }
+  await payload.update({ collection: 'media', id: mediaId, data: { _h_tags: ids } as any, overrideAccess: true })
+  return ids.length
 }

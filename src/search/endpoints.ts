@@ -1,6 +1,6 @@
 import type { Endpoint, PayloadRequest } from 'payload'
 
-import { setVector, upsertSidecar } from '../import/sidecar'
+import { setVector, syncMediaTags, upsertSidecar } from '../import/sidecar'
 import { byPalette, searchReferences, similarReferences } from './service'
 
 const body = async (req: PayloadRequest): Promise<any> => {
@@ -60,5 +60,33 @@ export const importEndpoint: Endpoint = {
     const doc: any = await upsertSidecar(req.payload, { sidecar: b.sidecar, source: b.source, file })
     if (Array.isArray(b.vector) && b.vector.length === 3072) await setVector(req.payload, doc.id, b.vector)
     return Response.json({ id: doc.id, sourceKey: doc.sourceKey, hasImage: Boolean(doc.image) })
+  },
+}
+
+/** POST /api/references/sync-tags {offset?, limit?} backfills image tags from reference tags, one page at a time. */
+export const syncTagsEndpoint: Endpoint = {
+  path: '/sync-tags',
+  method: 'post',
+  handler: async (req) => {
+    const denied = guard(req)
+    if (denied) return denied
+    const b = await body(req)
+    const limit = Math.min(Number(b.limit ?? 50), 200)
+    const page = Math.floor(Number(b.offset ?? 0) / limit) + 1
+    const res = await req.payload.find({
+      collection: 'references',
+      where: { image: { exists: true } },
+      sort: 'id',
+      limit,
+      page,
+      depth: 0,
+      overrideAccess: true,
+    })
+    let tagged = 0
+    for (const r of res.docs as any[]) {
+      await syncMediaTags(req.payload, Number(r.image), r.tags ?? {})
+      tagged++
+    }
+    return Response.json({ tagged, totalDocs: res.totalDocs, hasNextPage: res.hasNextPage })
   },
 }
