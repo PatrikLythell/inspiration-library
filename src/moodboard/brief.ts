@@ -71,6 +71,8 @@ export type Brief = {
   context_inferred: boolean
   breadth: Breadth
   mood: string[]
+  /** How the direction talks, read from the concept: it sets the tone of every headline. */
+  voice: string
   palette: { hex: string; name: string; role: string; share: number }[]
   materials: string[]
   photography: { light: string; lens: string; grade: string; subjects: string }
@@ -107,8 +109,11 @@ Rules:
 - No logos, brand names, trademarks or recognisable products from the references.
 - Typography is part of the style: where a lead reference gets its punch from type, the tile keeps that type style
   (weight, size, case, tightness, layout). Image models only spell short display text reliably, so each such tile gets
-  a "headline": 1-4 short, neutral words that fit this business (e.g. "Close the books", "Every krona counted", "Q4"),
-  never a brand name, a logo or a real company. Small body copy is left to the image model as fine lines; do not
+  a "headline": 1-4 short words that fit this business, never a brand name, a logo or a real company.
+- voice: read the concept and write how this direction talks, then write EVERY headline in that voice. The copy's
+  energy matches the visuals: a big, bold concept gets big, bold copy ("Numbers, handled."); a calm concept gets calm,
+  witty copy ("Quietly on top of it"); a professional concept gets sleek, confident copy ("Clarity, by design").
+  Headlines across the board should feel written by one person. Small body copy is left to the image model as fine lines; do not
   describe it. Photography and space tiles normally have headline "" unless signage or a poster is the point.
 - signatures: for EVERY reference, its kind (one of: ${MEDIA_KINDS.join(', ')}; what the reference IS an example of,
   e.g. a laptop showing a website is web-ui, a staged shadow photo is photography, a box is packaging) and 2-4 concrete devices someone would recognise it by (e.g. "human silhouette shadow
@@ -143,6 +148,7 @@ Return JSON only:
  "idea": one sentence: the idea behind the direction, for this business,
  "context": who it is for, one line, "context_inferred": true|false,
  "mood": 5 words,
+ "voice": one sentence on the tone of voice and why it fits the concept,
  "palette": [{"hex":"#rrggbb","name":"","role":"","share":0}],
  "materials": 4-6 materials, finishes or textures,
  "photography": {"light":"","lens":"","grade":"","subjects":""},
@@ -263,6 +269,7 @@ export function clean(b: any, board: any, cards: any[], opts: { context?: string
     context_inferred: !opts.context,
     breadth: opts.breadth ?? 'balanced',
     mood: list(b.mood).slice(0, 6),
+    voice: str(b.voice),
     palette,
     materials: list(b.materials).slice(0, 8),
     photography: { light: str(b.photography?.light), lens: str(b.photography?.lens), grade: str(b.photography?.grade), subjects: str(b.photography?.subjects) },

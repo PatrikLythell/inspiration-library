@@ -43,7 +43,7 @@ ${app.devices?.length ? `COPY THESE DETAILS FROM THE LEAD: ${join(app.devices)}.
 FOR: ${brief.context || 'a brand'}.
 LIGHT HARMONY ONLY (lean slightly toward these; the lead's character wins): palette ${pal}${mood ? `; mood ${mood}` : ''}.
 
-${app.headline ? `TYPOGRAPHY: set the words "${app.headline}" (spelled exactly like this, nothing added) as the display type, in the lead's own type style: same weight, scale, case, tightness and placement. This is the only readable text.` : 'No readable text.'} ${SMALL_COPY[app.kind] ?? SMALL_COPY.photography} Never logos, brand names, trademarks or colour codes. Objects are made of what such objects are really made of. A single image, no borders, no collage.`
+${app.headline ? `TYPOGRAPHY: set the words "${app.headline}" (spelled exactly like this, nothing added) as the display type, in the lead's own type style: same weight, scale, case, tightness and placement.${brief.voice ? ` The typesetting should match this voice: ${brief.voice}` : ''} This is the only readable text.` : 'No readable text.'} ${SMALL_COPY[app.kind] ?? SMALL_COPY.photography} Never logos, brand names, trademarks or colour codes. Objects are made of what such objects are really made of. A single image, no borders, no collage.`
 }
 
 async function generateOne(model: string, prompt: string, ratio: string, anchorImages: string[]) {
