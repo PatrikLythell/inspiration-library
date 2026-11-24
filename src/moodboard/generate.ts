@@ -11,15 +11,15 @@ const CONCURRENCY = 6
 /** Joins brief phrases without doubled punctuation (".;" or ".."). */
 const join = (xs: string[], sep = '; ') => xs.map((x) => x.trim().replace(/[.;,\s]+$/, '')).filter(Boolean).join(sep)
 
-/** How each medium goes without lettering: layouts keep their structure; photos stay pure photos. */
-const TEXTLESS: Record<string, string> = {
-  'web-ui': 'Keep the interface layout of the lead, with copy rendered as soft grey lines and blocks at realistic size, as in a real product shot; never a wireframe, never labels like "button".',
-  print: 'Keep the layout of the lead, with typography rendered as solid colour blocks and fine grey lines.',
-  packaging: 'Keep the surface graphics of the lead, with any lettering replaced by bold shapes and colour blocks.',
-  graphic: 'Carry the weight of any typography with bold shapes and colour blocks.',
-  photography: 'This is a pure photograph: no overlaid graphics, bars, captions or interface elements, and nothing printed with words.',
-  space: 'A pure photograph of the space: no overlaid graphics, and signs or walls carry only colour, shape and light.',
-  object: 'A pure photograph: no overlaid graphics, and surfaces carry only colour, shape and pattern.',
+/** How each medium handles copy it does not spell out: layouts keep their structure; photos stay photos. */
+const SMALL_COPY: Record<string, string> = {
+  'web-ui': 'Smaller interface copy reads as fine grey lines at realistic size, as in a real product shot; never a wireframe.',
+  print: 'Smaller copy reads as fine lines.',
+  packaging: 'Smaller copy reads as fine lines.',
+  graphic: 'Smaller copy reads as fine lines.',
+  photography: 'It stays a pure photograph: no overlaid graphics, bars or interface elements.',
+  space: 'It stays a pure photograph of the space: no overlaid graphics.',
+  object: 'It stays a pure photograph: no overlaid graphics.',
 }
 
 export function tilePrompt(brief: Brief, app: Brief['applications'][number], anchors: number) {
@@ -43,7 +43,7 @@ ${app.devices?.length ? `COPY THESE DETAILS FROM THE LEAD: ${join(app.devices)}.
 FOR: ${brief.context || 'a brand'}.
 LIGHT HARMONY ONLY (lean slightly toward these; the lead's character wins): palette ${pal}${mood ? `; mood ${mood}` : ''}.
 
-STRICT: no readable text, letters, numbers, logos, brand names, trademarks or colour codes anywhere. ${TEXTLESS[app.kind] ?? TEXTLESS.photography} Objects are made of what such objects are really made of. A single image, no borders, no collage.`
+${app.headline ? `TYPOGRAPHY: set the words "${app.headline}" (spelled exactly like this, nothing added) as the display type, in the lead's own type style: same weight, scale, case, tightness and placement. This is the only readable text.` : 'No readable text.'} ${SMALL_COPY[app.kind] ?? SMALL_COPY.photography} Never logos, brand names, trademarks or colour codes. Objects are made of what such objects are really made of. A single image, no borders, no collage.`
 }
 
 async function generateOne(model: string, prompt: string, ratio: string, anchorImages: string[]) {

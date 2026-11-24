@@ -36,6 +36,7 @@ function mergeBrief(base: Brief, patch: any): Brief {
     kind: a.kind ?? 'photography',
     lead: Number(a.lead) || (Array.isArray(a.anchors) ? Number(a.anchors[0]) : 0),
     devices: Array.isArray(a.devices) ? a.devices.map(String) : [],
+    headline: typeof a.headline === 'string' ? a.headline : '',
     anchors: Array.isArray(a.anchors) ? a.anchors.map(Number) : [],
   }))
   return out
@@ -81,7 +82,7 @@ function summary(mb: any) {
 
 export const moodboardTools = {
   moodboard_brief: defineTool({
-    description: `Read a board of references, name each reference's signature details, and define a direction that keeps those details and harmonises only vibe and palette; then plan applications that show that look in use: core touchpoints the business really has, a few stretch uses, and one or two look studies. Pass context (who it is for) so the touchpoints fit; breadth shifts the mix. Brand-free: no logos, names or readable words. Creates a draft moodboard and returns its id and brief. ${WORKFLOW}`,
+    description: `Read a board of references, name each reference's signature details, and define a direction that keeps those details and harmonises only vibe and palette; then plan applications that show that look in use: core touchpoints the business really has, a few stretch uses, and one or two look studies. Pass context (who it is for) so the touchpoints fit; breadth shifts the mix. Brand-free: no logos or brand names; display type keeps the references' style with short neutral headline words. Creates a draft moodboard and returns its id and brief. ${WORKFLOW}`,
     annotations: { title: 'Plan a harmonized moodboard' },
     input: {
       type: 'object',

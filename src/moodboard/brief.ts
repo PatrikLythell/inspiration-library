@@ -6,7 +6,7 @@ import { hydrate } from '../search/lib'
 /**
  * Step 1 of a harmonized moodboard: read a board and distil ONE shared look from it
  * (concept, palette, materials, photography, graphic language; used internally to keep images consistent) plus a varied set of
- * applications that show that look in use. Brand-free: no logos, names or readable words.
+ * applications that show that look in use. Brand-free: no logos or brand names; display type keeps the references' style with short neutral headline words.
  */
 
 export const BRIEF_MODEL = process.env.MOODBOARD_BRIEF_MODEL ?? 'google/gemini-3.5-flash'
@@ -59,6 +59,8 @@ export type Application = {
   lead: number
   /** Signature devices from the references this tile carries literally. */
   devices: string[]
+  /** Short neutral display words set in the lead's type style ('' for tiles without typography). */
+  headline: string
   anchors: number[]
 }
 
@@ -103,9 +105,11 @@ ${direction ? `Steer from the designer: ${direction}
 ` : ''}
 Rules:
 - No logos, brand names, trademarks or recognisable products from the references.
-- Image models write gibberish, so images carry NO letters at all. Never mention text, type, lettering, words or
-  numbers in a scene. When a reference gets its punch from typography, carry that punch with a non-letter device of
-  the same weight: oversized flat colour blocks, big geometric shapes, cut-outs, dense layered print pieces, photography.
+- Typography is part of the style: where a lead reference gets its punch from type, the tile keeps that type style
+  (weight, size, case, tightness, layout). Image models only spell short display text reliably, so each such tile gets
+  a "headline": 1-4 short, neutral words that fit this business (e.g. "Close the books", "Every krona counted", "Q4"),
+  never a brand name, a logo or a real company. Small body copy is left to the image model as fine lines; do not
+  describe it. Photography and space tiles normally have headline "" unless signage or a poster is the point.
 - signatures: for EVERY reference, its kind (one of: ${MEDIA_KINDS.join(', ')}; what the reference IS an example of,
   e.g. a laptop showing a website is web-ui, a staged shadow photo is photography, a box is packaging) and 2-4 concrete devices someone would recognise it by (e.g. "human silhouette shadow
   falling across a translucent coloured panel", "hard midday cast shadow of a cut-out shape on grey asphalt",
@@ -146,7 +150,7 @@ Return JSON only:
  "do": 4 rules, "dont": 4 rules,
  "style_prompt": "",
  "signatures": [{"id":0,"kind":"","devices":[""]}],
- "applications": [{"key":"kebab-case","title":"","category":"","tier":"core|stretch|look","why":"","kind":"","lead":0,"devices":[""],"scene":"","aspect_ratio":"","anchors":[id]}]}`
+ "applications": [{"key":"kebab-case","title":"","category":"","tier":"core|stretch|look","why":"","kind":"","lead":0,"devices":[""],"headline":"","scene":"","aspect_ratio":"","anchors":[id]}]}`
 }
 
 /** Fetches an image (absolute URL or a site-relative media path) and shrinks it for the model. */
@@ -247,6 +251,7 @@ export function clean(b: any, board: any, cards: any[], opts: { context?: string
     kind: (MEDIA_KINDS as readonly string[]).includes(str(a.kind)) ? (a.kind as MediaKind) : 'photography',
     lead,
     devices: list(a.devices).slice(0, 4),
+    headline: str(a.headline).trim().split(/\s+/).slice(0, 5).join(' '),
     anchors: list(a.anchors).map(Number).filter((id) => ids.has(id) && id !== lead).slice(0, 1),
   }
   })
