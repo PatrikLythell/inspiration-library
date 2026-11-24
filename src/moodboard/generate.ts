@@ -13,22 +13,21 @@ const join = (xs: string[], sep = '; ') => xs.map((x) => x.trim().replace(/[.;,\
 
 export function tilePrompt(brief: Brief, app: Brief['applications'][number], anchors: number) {
   // Colour names, not hex codes: models tend to paint hex codes into the image as labels.
-  const pal = brief.palette.map((p) => `${p.name} (${p.role}, about ${p.share}%)`).join(', ')
+  const pal = brief.palette.map((p) => p.name).join(', ')
   const style = brief.style_prompt.replace(/\s*\(?#[0-9a-f]{6}\)?/gi, '')
-  return `Create one photograph-quality image for a brand moodboard.
+  const lead = anchors > 0
+  return `Create one image for a brand moodboard.
 
-SHOW: ${app.title}. ${app.scene}
+${lead ? `THE FIRST ATTACHED IMAGE IS THE LEAD REFERENCE. Make a new image that could hang next to it in the same series: the same way of making the image (photographic approach, camera distance and crop, light effect, colour intensity, graphic devices, finish and grain). Only the subject changes. Keep its boldness and specific details; do not tone it down, tidy it up, make it more minimal or more generic. Do not copy its product, its marks or any lettering.${anchors > 1 ? ' The other attached images are from the same moodboard: take the details named below from them.' : ''}
 
-FOR: ${brief.context || 'a brand'}. ${app.why}
-SHARED LOOK "${brief.name}": ${brief.idea}
-${style}
-Palette, use only these colours: ${pal}.
-Materials: ${join(brief.materials, ', ')}.
-Photography: ${join([brief.photography.light, brief.photography.lens, brief.photography.grade])}.
-Graphic language: ${join([brief.graphic_language.shapes, brief.graphic_language.pattern, brief.graphic_language.composition])}.
+` : ''}SHOW: ${app.title}. ${app.scene}
+${app.devices?.length ? `CARRY THESE DETAILS LITERALLY: ${join(app.devices)}.
+` : ''}
+FOR: ${brief.context || 'a brand'}.
+HARMONISE (vibe and colour only, it must not flatten the details): ${style} Palette: ${pal}.
 Avoid: ${join(brief.dont)}.
 
-${anchors ? `The attached ${anchors > 1 ? 'images are style anchors' : 'image is a style anchor'}: borrow light, grade, texture and colour handling only. Do not copy their content, layout, products or any marks.\n` : ''}STRICT: absolutely no text, letters, numbers, logos, brand names, trademarks, colour codes or swatch labels anywhere. Labels, signs, screens, covers and pages carry only blank space, colour fields, simple abstract shapes, fine rules or texture. Objects are made of what such objects are really made of. Real, imperfect, crafted, natural textures and light; not glossy CGI. No borders, no collage, a single image.`
+STRICT: no text, letters, numbers, logos, brand names, trademarks or colour codes anywhere. Where the lead uses typography, use bold non-letter graphics of the same weight instead (big colour blocks, geometric shapes, cut-outs, imagery). Objects are made of what such objects are really made of. A single image, no borders, no collage.`
 }
 
 async function generateOne(model: string, prompt: string, ratio: string, anchorImages: string[]) {
@@ -75,19 +74,19 @@ export async function generateTiles(payload: Payload, args: { moodboardId: numbe
   // Anchor images: shrink each referenced board image once.
   const { cards } = await boardCards(payload, brief.source.board_id).catch(() => ({ cards: [] as any[] }))
   const byId = new Map(cards.map((c: any) => [c.id, c]))
-  const wanted = [...new Set(apps.flatMap((a) => a.anchors))]
+  const wanted = [...new Set(apps.flatMap((a) => [a.lead, ...a.anchors].filter(Boolean)))]
   const anchorData = new Map<number, string>()
   await Promise.all(
     wanted.map(async (id) => {
       const c: any = byId.get(id)
-      const img = c && (await loadImage(c.grid ?? c.thumb, 768))
+      const img = c && (await loadImage(c.large ?? c.grid ?? c.thumb, 1024))
       if (img) anchorData.set(id, img)
     }),
   )
 
   let spent = 0
   const results = await pool(apps, CONCURRENCY, async (app) => {
-    const anchors = app.anchors.map((id) => anchorData.get(id)).filter(Boolean) as string[]
+    const anchors = [app.lead, ...app.anchors].map((id) => anchorData.get(id)).filter(Boolean) as string[]
     const prompt = tilePrompt(brief, app, anchors.length)
     let lastError = ''
     for (let attempt = 0; attempt < 2; attempt++) {

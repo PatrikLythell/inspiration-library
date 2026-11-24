@@ -49,6 +49,10 @@ export type Application = {
   why: string
   scene: string
   aspect_ratio: string
+  /** The reference this tile is a close cousin of; sent first as the image anchor. */
+  lead: number
+  /** Signature devices from the references this tile carries literally. */
+  devices: string[]
   anchors: number[]
 }
 
@@ -66,6 +70,8 @@ export type Brief = {
   do: string[]
   dont: string[]
   style_prompt: string
+  /** Per reference: the concrete visual devices that make it what it is. */
+  signatures: { id: number; devices: string[] }[]
   applications: Application[]
   source: { board_id: number; board_name: string; reference_ids: number[] }
 }
@@ -74,40 +80,49 @@ type PromptArgs = { n: number; board: string; context?: string; breadth: Breadth
 
 const PROMPT = ({ n, board, context, breadth, direction, wanted }: PromptArgs) => {
   const t = tierCounts(n, breadth)
-  return `You are a senior brand designer building a harmonized moodboard.
+  return `You are a senior brand designer building a moodboard for a new brand direction.
 Below are references from a moodboard called "${board}" (each image is labelled with its id, tags and palette).
-The references are mixed: different brands, media and colours. Your job is to find the ONE coherent look
-they share (or the strongest look they point to) and define it so tightly that every new image made from it
-looks like the same brand world. Pick, do not average: drop references and colours that pull away from the look.
+The designer chose these references for their specific details: the light effects, compositions, graphic devices,
+crops, colour intensity and finishes. The new moodboard must CARRY THOSE DETAILS: each new image is a close cousin of
+one reference, recognisably made the same way, only showing a touchpoint of this business instead.
+Harmonise ONLY in vibe, palette and light so the board feels like one world. Never average the references into
+something safe, minimal, beige or generic: keep their boldness, saturation and character.
 
 WHO IT IS FOR: ${context ? context : 'not given. Infer the most likely kind of business or organisation from the board, state it in "context" and set "context_inferred": true.'}
-The look is for this business. Its applications are the touchpoints this kind of business really has.
+The applications are the touchpoints this kind of business really has.
 ${direction ? `Steer from the designer: ${direction}
 ` : ''}
 Rules:
-- No logos, brand names, trademarks or recognisable products from the references. This is a look, not a copy.
-- Image models write gibberish, so applications carry NO letters at all: labels, signs, screens, covers and pages show
-  blank space, colour fields, abstract shapes, rules or texture instead. Never mention text, type, lettering, words or
-  numbers in a scene.
-- The palette is strict: 4-6 colours with roles (base, surface, ink, accent, support) and share in percent summing to 100.
-- style_prompt: one dense paragraph (60-110 words) an image model can follow for EVERY tile: medium, light,
-  grade, grain, materials, colour use by colour NAME (no hex codes), shapes and composition habits. No brand names, no text.
+- No logos, brand names, trademarks or recognisable products from the references.
+- Image models write gibberish, so images carry NO letters at all. Never mention text, type, lettering, words or
+  numbers in a scene. When a reference gets its punch from typography, carry that punch with a non-letter device of
+  the same weight: oversized flat colour blocks, big geometric shapes, cut-outs, dense layered print pieces, photography.
+- signatures: for EVERY reference, 2-4 concrete devices someone would recognise it by (e.g. "human silhouette shadow
+  falling across a translucent coloured panel", "hard midday cast shadow of a cut-out shape on grey asphalt",
+  "objects shot from directly above, scattered in a dense grid of saturated flat colours", "bold saturated green
+  object against a sunlit white wall, harsh flash"). Specific and visual, never abstract adjectives.
+- palette: 4-6 colours with roles and share in percent summing to 100, taken from the references at their REAL
+  saturation (do not mute them).
+- style_prompt: one dense paragraph (60-110 words) on the shared vibe: light, grade, grain, colour use by colour NAME
+  (no hex codes). It harmonises; it must not flatten the references' devices.
 - applications: exactly ${n}, in three tiers (breadth: ${breadth}):
   * ${t.core} "core": touchpoints this business certainly uses and that matter most to it.
   * ${t.stretch} "stretch": plausible for this business but less expected, to show the look travels.
-  * ${t.look} "look": a study of the world itself (material, texture, pattern, light or a photographic moment), no product.
+  * ${t.look} "look": a study of the world itself (light, material, pattern, a photographic moment), no product.
   Spread them across kinds and scales (close-up, object, space, screen, print, photo); no two of the same kind unless the business lives there.
   Kinds to think across: ${TOUCHPOINT_KINDS.join('; ')}.${wanted?.length ? `\n  Must include (count them as core): ${wanted.join('; ')}.` : ''}
+  lead: the ONE reference id this tile is a close cousin of. Every reference leads at least one tile (if there are
+  more references than tiles, pick the strongest). Choose the lead whose way of making images suits the touchpoint.
+  devices: 2-3 signature devices this tile carries literally, mostly from its lead, maybe one from another reference.
+  scene: 2-3 sentences: exactly what is in frame, camera and crop, and HOW the devices appear in it. Make it as
+  specific and bold as the lead reference.
+  Sense check: objects are made of what such objects are really made of (a business card is card, a laptop is aluminium).
   why: one short sentence on why this touchpoint matters for this business.
-  scene: 1-3 sentences describing exactly what is in frame, camera/angle and how palette and graphic language appear.
-  Sense check every scene: objects are made of what such objects are really made of (a business card is paper or card,
-  a laptop is aluminium); bring the look's materials in through finish, colour, setting and props, never by making an
-  object from an implausible material.
-  aspect_ratio: one of 1:1, 4:5, 3:4, 2:3, 16:9, 3:2 (mix them for a lively board).
-  anchors: 1-3 reference ids whose look this tile should borrow most.
+  aspect_ratio: one of 1:1, 4:5, 3:4, 2:3, 16:9, 3:2 (mix them for a lively board; follow the lead's framing where it fits).
+  anchors: 0-2 further reference ids that also feed this tile (not the lead).
 Return JSON only:
-{"name": short evocative name for the look (2-4 words),
- "idea": one sentence: the idea behind the look, for this business,
+{"name": short evocative name for the direction (2-4 words),
+ "idea": one sentence: the idea behind the direction, for this business,
  "context": who it is for, one line, "context_inferred": true|false,
  "mood": 5 words,
  "palette": [{"hex":"#rrggbb","name":"","role":"","share":0}],
@@ -116,7 +131,8 @@ Return JSON only:
  "graphic_language": {"shapes":"","pattern":"","layout":"","composition":""},
  "do": 4 rules, "dont": 4 rules,
  "style_prompt": "",
- "applications": [{"key":"kebab-case","title":"","category":"","tier":"core|stretch|look","why":"","scene":"","aspect_ratio":"","anchors":[id]}]}`
+ "signatures": [{"id":0,"devices":[""]}],
+ "applications": [{"key":"kebab-case","title":"","category":"","tier":"core|stretch|look","why":"","lead":0,"devices":[""],"scene":"","aspect_ratio":"","anchors":[id]}]}`
 }
 
 /** Fetches an image (absolute URL or a site-relative media path) and shrinks it for the model. */
@@ -203,7 +219,10 @@ export function clean(b: any, board: any, cards: any[], opts: { context?: string
     .slice(0, 6)
     .map((p: any) => ({ hex: p.hex.toLowerCase(), name: str(p.name), role: str(p.role), share: Number(p.share) || 0 }))
   if (!palette.length) throw new Error('brief has no palette')
-  const apps = (Array.isArray(b.applications) ? b.applications : []).map((a: any, i: number) => ({
+  const firstId = cards[0]?.id
+  const apps = (Array.isArray(b.applications) ? b.applications : []).map((a: any, i: number) => {
+    const lead = ids.has(Number(a.lead)) ? Number(a.lead) : (list(a.anchors).map(Number).find((id) => ids.has(id)) ?? firstId)
+    return {
     key: str(a.key) || `tile-${i + 1}`,
     title: str(a.title) || `Application ${i + 1}`,
     category: str(a.category),
@@ -211,8 +230,11 @@ export function clean(b: any, board: any, cards: any[], opts: { context?: string
     why: str(a.why),
     scene: str(a.scene),
     aspect_ratio: RATIOS.has(str(a.aspect_ratio)) ? a.aspect_ratio : '4:5',
-    anchors: list(a.anchors).map(Number).filter((id) => ids.has(id)).slice(0, 3),
-  }))
+    lead,
+    devices: list(a.devices).slice(0, 4),
+    anchors: list(a.anchors).map(Number).filter((id) => ids.has(id) && id !== lead).slice(0, 2),
+  }
+  })
   if (!apps.length) throw new Error('brief has no applications')
   return {
     name: str(b.name) || `${board.name} look`,
@@ -233,6 +255,9 @@ export function clean(b: any, board: any, cards: any[], opts: { context?: string
     do: list(b.do).slice(0, 6),
     dont: list(b.dont).slice(0, 6),
     style_prompt: str(b.style_prompt),
+    signatures: (Array.isArray(b.signatures) ? b.signatures : [])
+      .filter((x: any) => ids.has(Number(x?.id)))
+      .map((x: any) => ({ id: Number(x.id), devices: list(x.devices).slice(0, 4) })),
     applications: apps,
     source: { board_id: Number(board.id), board_name: board.name, reference_ids: cards.map((c) => c.id) },
   }
