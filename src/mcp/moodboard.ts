@@ -33,6 +33,7 @@ function mergeBrief(base: Brief, patch: any): Brief {
     why: a.why ?? '',
     scene: a.scene ?? '',
     aspect_ratio: a.aspect_ratio ?? '4:5',
+    kind: a.kind ?? 'photography',
     lead: Number(a.lead) || (Array.isArray(a.anchors) ? Number(a.anchors[0]) : 0),
     devices: Array.isArray(a.devices) ? a.devices.map(String) : [],
     anchors: Array.isArray(a.anchors) ? a.anchors.map(Number) : [],
@@ -113,7 +114,7 @@ export const moodboardTools = {
   }),
 
   moodboard_generate: defineTool({
-    description: `Generate the images for a planned moodboard: one per application, each a close cousin of one board reference (its lead) carrying that reference's details, harmonised only in vibe and palette. Returns the direction name, the image URLs and an artboard layout (x, y, width, height per image) for placing them on a canvas. Optionally pass an edited brief (only the fields you change; applications and palette replace the whole list) and "only" to (re)make specific tiles. ${WORKFLOW}`,
+    description: `Generate the images for a planned moodboard: one per application, each an adapted copy of one board reference of the same medium (web from web, photo from photo), with only a light palette and mood harmony across them. Returns the direction name, the image URLs and an artboard layout (x, y, width, height per image) for placing them on a canvas. Optionally pass an edited brief (only the fields you change; applications and palette replace the whole list) and "only" to (re)make specific tiles. ${WORKFLOW}`,
     annotations: { title: 'Generate the moodboard' },
     input: {
       type: 'object',

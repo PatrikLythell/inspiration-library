@@ -11,23 +11,39 @@ const CONCURRENCY = 6
 /** Joins brief phrases without doubled punctuation (".;" or ".."). */
 const join = (xs: string[], sep = '; ') => xs.map((x) => x.trim().replace(/[.;,\s]+$/, '')).filter(Boolean).join(sep)
 
+/** How each medium goes without lettering: layouts keep their structure; photos stay pure photos. */
+const TEXTLESS: Record<string, string> = {
+  'web-ui': 'Keep the interface layout of the lead, with copy rendered as soft grey lines and blocks at realistic size, as in a real product shot; never a wireframe, never labels like "button".',
+  print: 'Keep the layout of the lead, with typography rendered as solid colour blocks and fine grey lines.',
+  packaging: 'Keep the surface graphics of the lead, with any lettering replaced by bold shapes and colour blocks.',
+  graphic: 'Carry the weight of any typography with bold shapes and colour blocks.',
+  photography: 'This is a pure photograph: no overlaid graphics, bars, captions or interface elements, and nothing printed with words.',
+  space: 'A pure photograph of the space: no overlaid graphics, and signs or walls carry only colour, shape and light.',
+  object: 'A pure photograph: no overlaid graphics, and surfaces carry only colour, shape and pattern.',
+}
+
 export function tilePrompt(brief: Brief, app: Brief['applications'][number], anchors: number) {
   // Colour names, not hex codes: models tend to paint hex codes into the image as labels.
   const pal = brief.palette.map((p) => p.name).join(', ')
-  const style = brief.style_prompt.replace(/\s*\(?#[0-9a-f]{6}\)?/gi, '')
-  const lead = anchors > 0
+  const mood = brief.mood?.length ? brief.mood.join(', ') : ''
+  const sameKind = brief.signatures?.find((x) => x.id === app.lead)?.kind === app.kind
+  const how: Record<string, string> = {
+    'web-ui': 'Copy its interface closely: page layout, grid, proportions of image and blocks, navigation and UI component style, device and how the screen is shot.',
+    photography: 'Copy its photography closely: subject treatment, staging, light and shadow, camera angle, crop, grade and grain.',
+    packaging: 'Copy its packaging closely: form, construction, surface graphics, finish and how it is shot.',
+    print: 'Copy its print closely: format, layout, colour blocking, stock, arrangement and how it is shot.',
+    space: 'Copy its space closely: architecture, materials, light, scale and how it is shot.',
+    graphic: 'Copy its graphic language closely: shapes, composition, colour handling and texture.',
+    object: 'Copy its object treatment closely: form, material, finish and how it is shot.',
+  }
   return `Create one image for a brand moodboard.
 
-${lead ? `THE FIRST ATTACHED IMAGE IS THE LEAD REFERENCE. Make a new image that could hang next to it in the same series: the same way of making the image (photographic approach, camera distance and crop, light effect, colour intensity, graphic devices, finish and grain). Only the subject changes. Keep its boldness and specific details; do not tone it down, tidy it up, make it more minimal or more generic. Do not copy its product, its marks or any lettering.${anchors > 1 ? ' The other attached images are from the same moodboard: take the details named below from them.' : ''}
-
-` : ''}SHOW: ${app.title}. ${app.scene}
-${app.devices?.length ? `CARRY THESE DETAILS LITERALLY: ${join(app.devices)}.
-` : ''}
+${anchors ? `THE FIRST ATTACHED IMAGE IS THE LEAD REFERENCE. Make an adapted copy of it: ${sameKind ? how[app.kind] ?? how.graphic : 'the same way of making the image: composition, light, colour intensity, graphic devices, finish.'} Change only the content so it shows the subject below for this business. Keep its boldness and specific details; do not tone it down, tidy it up or make it more generic. Do not copy its product, its marks or any lettering.${anchors > 1 ? ' The second attached image is only for a small harmonising touch (colour or mood); do not let it change the lead\'s character.' : ''}\n\n` : ''}SHOW: ${app.title}. ${app.scene}
+${app.devices?.length ? `COPY THESE DETAILS FROM THE LEAD: ${join(app.devices)}.\n` : ''}
 FOR: ${brief.context || 'a brand'}.
-HARMONISE (vibe and colour only, it must not flatten the details): ${style} Palette: ${pal}.
-Avoid: ${join(brief.dont)}.
+LIGHT HARMONY ONLY (lean slightly toward these; the lead's character wins): palette ${pal}${mood ? `; mood ${mood}` : ''}.
 
-STRICT: no text, letters, numbers, logos, brand names, trademarks or colour codes anywhere. Where the lead uses typography, use bold non-letter graphics of the same weight instead (big colour blocks, geometric shapes, cut-outs, imagery). Objects are made of what such objects are really made of. A single image, no borders, no collage.`
+STRICT: no readable text, letters, numbers, logos, brand names, trademarks or colour codes anywhere. ${TEXTLESS[app.kind] ?? TEXTLESS.photography} Objects are made of what such objects are really made of. A single image, no borders, no collage.`
 }
 
 async function generateOne(model: string, prompt: string, ratio: string, anchorImages: string[]) {

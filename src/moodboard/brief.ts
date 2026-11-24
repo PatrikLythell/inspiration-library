@@ -25,6 +25,10 @@ export const TOUCHPOINT_KINDS = [
   'look study (material, texture, pattern, light; no object)',
 ]
 
+/** Media kinds: a reference only leads tiles of its own kind, so web stays web and photo stays photo. */
+export const MEDIA_KINDS = ['photography', 'web-ui', 'packaging', 'print', 'space', 'graphic', 'object'] as const
+export type MediaKind = (typeof MEDIA_KINDS)[number]
+
 export type Breadth = 'focused' | 'balanced' | 'wide'
 
 /** Share of core / stretch / look-builder applications per breadth setting. */
@@ -49,6 +53,8 @@ export type Application = {
   why: string
   scene: string
   aspect_ratio: string
+  /** What medium this tile is; its lead is a reference of the same kind whenever the board has one. */
+  kind: MediaKind
   /** The reference this tile is a close cousin of; sent first as the image anchor. */
   lead: number
   /** Signature devices from the references this tile carries literally. */
@@ -71,7 +77,7 @@ export type Brief = {
   dont: string[]
   style_prompt: string
   /** Per reference: the concrete visual devices that make it what it is. */
-  signatures: { id: number; devices: string[] }[]
+  signatures: { id: number; kind: MediaKind; devices: string[] }[]
   applications: Application[]
   source: { board_id: number; board_name: string; reference_ids: number[] }
 }
@@ -82,11 +88,14 @@ const PROMPT = ({ n, board, context, breadth, direction, wanted }: PromptArgs) =
   const t = tierCounts(n, breadth)
   return `You are a senior brand designer building a moodboard for a new brand direction.
 Below are references from a moodboard called "${board}" (each image is labelled with its id, tags and palette).
-The designer chose these references for their specific details: the light effects, compositions, graphic devices,
-crops, colour intensity and finishes. The new moodboard must CARRY THOSE DETAILS: each new image is a close cousin of
-one reference, recognisably made the same way, only showing a touchpoint of this business instead.
-Harmonise ONLY in vibe, palette and light so the board feels like one world. Never average the references into
-something safe, minimal, beige or generic: keep their boldness, saturation and character.
+The designer picked each reference for a job, by its medium: a photo for how the photography should look, a website
+for how the web should look, packaging for packaging, and so on. Respect that split:
+- Each new image is a close, adapted copy of ONE reference OF THE SAME MEDIUM (its lead): same layout, structure,
+  composition, crop, light, finish and graphic devices, with only the content changed to this business.
+  A web or app tile copies a web/ui reference's layout and interface style closely; a photography tile copies a
+  photo reference's subject treatment, light and framing closely; packaging follows packaging; and so on.
+- Only a small conciliation between the media holds the board together: a shared palette and vibe. It must never
+  override the lead's own character. Never average the references into something safe, minimal or generic.
 
 WHO IT IS FOR: ${context ? context : 'not given. Infer the most likely kind of business or organisation from the board, state it in "context" and set "context_inferred": true.'}
 The applications are the touchpoints this kind of business really has.
@@ -97,7 +106,8 @@ Rules:
 - Image models write gibberish, so images carry NO letters at all. Never mention text, type, lettering, words or
   numbers in a scene. When a reference gets its punch from typography, carry that punch with a non-letter device of
   the same weight: oversized flat colour blocks, big geometric shapes, cut-outs, dense layered print pieces, photography.
-- signatures: for EVERY reference, 2-4 concrete devices someone would recognise it by (e.g. "human silhouette shadow
+- signatures: for EVERY reference, its kind (one of: ${MEDIA_KINDS.join(', ')}; what the reference IS an example of,
+  e.g. a laptop showing a website is web-ui, a staged shadow photo is photography, a box is packaging) and 2-4 concrete devices someone would recognise it by (e.g. "human silhouette shadow
   falling across a translucent coloured panel", "hard midday cast shadow of a cut-out shape on grey asphalt",
   "objects shot from directly above, scattered in a dense grid of saturated flat colours", "bold saturated green
   object against a sunlit white wall, harsh flash"). Specific and visual, never abstract adjectives.
@@ -111,15 +121,19 @@ Rules:
   * ${t.look} "look": a study of the world itself (light, material, pattern, a photographic moment), no product.
   Spread them across kinds and scales (close-up, object, space, screen, print, photo); no two of the same kind unless the business lives there.
   Kinds to think across: ${TOUCHPOINT_KINDS.join('; ')}.${wanted?.length ? `\n  Must include (count them as core): ${wanted.join('; ')}.` : ''}
-  lead: the ONE reference id this tile is a close cousin of. Every reference leads at least one tile (if there are
-  more references than tiles, pick the strongest). Choose the lead whose way of making images suits the touchpoint.
-  devices: 2-3 signature devices this tile carries literally, mostly from its lead, maybe one from another reference.
+  Plan from the board: the media on the board decide which kinds of touchpoint get tiles. Every reference leads at
+  least one tile (if there are more references than tiles, pick the strongest).
+  kind: the tile's medium, one of: ${MEDIA_KINDS.join(', ')}.
+  lead: the ONE reference id this tile is an adapted copy of. It MUST have the same kind as the tile; only if the
+  board has no reference of that kind, use the closest one.
+  devices: 2-3 details from the lead that this tile copies literally. At most one small harmonising touch may come
+  from another reference (usually just colour).
   scene: 2-3 sentences: exactly what is in frame, camera and crop, and HOW the devices appear in it. Make it as
   specific and bold as the lead reference.
   Sense check: objects are made of what such objects are really made of (a business card is card, a laptop is aluminium).
   why: one short sentence on why this touchpoint matters for this business.
   aspect_ratio: one of 1:1, 4:5, 3:4, 2:3, 16:9, 3:2 (mix them for a lively board; follow the lead's framing where it fits).
-  anchors: 0-2 further reference ids that also feed this tile (not the lead).
+  anchors: 0-1 further reference id for the harmonising touch (not the lead); usually none.
 Return JSON only:
 {"name": short evocative name for the direction (2-4 words),
  "idea": one sentence: the idea behind the direction, for this business,
@@ -131,8 +145,8 @@ Return JSON only:
  "graphic_language": {"shapes":"","pattern":"","layout":"","composition":""},
  "do": 4 rules, "dont": 4 rules,
  "style_prompt": "",
- "signatures": [{"id":0,"devices":[""]}],
- "applications": [{"key":"kebab-case","title":"","category":"","tier":"core|stretch|look","why":"","lead":0,"devices":[""],"scene":"","aspect_ratio":"","anchors":[id]}]}`
+ "signatures": [{"id":0,"kind":"","devices":[""]}],
+ "applications": [{"key":"kebab-case","title":"","category":"","tier":"core|stretch|look","why":"","kind":"","lead":0,"devices":[""],"scene":"","aspect_ratio":"","anchors":[id]}]}`
 }
 
 /** Fetches an image (absolute URL or a site-relative media path) and shrinks it for the model. */
@@ -230,9 +244,10 @@ export function clean(b: any, board: any, cards: any[], opts: { context?: string
     why: str(a.why),
     scene: str(a.scene),
     aspect_ratio: RATIOS.has(str(a.aspect_ratio)) ? a.aspect_ratio : '4:5',
+    kind: (MEDIA_KINDS as readonly string[]).includes(str(a.kind)) ? (a.kind as MediaKind) : 'photography',
     lead,
     devices: list(a.devices).slice(0, 4),
-    anchors: list(a.anchors).map(Number).filter((id) => ids.has(id) && id !== lead).slice(0, 2),
+    anchors: list(a.anchors).map(Number).filter((id) => ids.has(id) && id !== lead).slice(0, 1),
   }
   })
   if (!apps.length) throw new Error('brief has no applications')
@@ -257,7 +272,7 @@ export function clean(b: any, board: any, cards: any[], opts: { context?: string
     style_prompt: str(b.style_prompt),
     signatures: (Array.isArray(b.signatures) ? b.signatures : [])
       .filter((x: any) => ids.has(Number(x?.id)))
-      .map((x: any) => ({ id: Number(x.id), devices: list(x.devices).slice(0, 4) })),
+      .map((x: any) => ({ id: Number(x.id), kind: ((MEDIA_KINDS as readonly string[]).includes(str(x.kind)) ? x.kind : 'photography') as MediaKind, devices: list(x.devices).slice(0, 4) })),
     applications: apps,
     source: { board_id: Number(board.id), board_name: board.name, reference_ids: cards.map((c) => c.id) },
   }
