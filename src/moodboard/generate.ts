@@ -19,6 +19,7 @@ export function tilePrompt(brief: Brief, app: Brief['applications'][number], anc
 
 SHOW: ${app.title}. ${app.scene}
 
+FOR: ${brief.context || 'a brand'}. ${app.why}
 SHARED LOOK "${brief.name}": ${brief.idea}
 ${style}
 Palette, use only these colours: ${pal}.
@@ -27,7 +28,7 @@ Photography: ${join([brief.photography.light, brief.photography.lens, brief.phot
 Graphic language: ${join([brief.graphic_language.shapes, brief.graphic_language.pattern, brief.graphic_language.composition])}.
 Avoid: ${join(brief.dont)}.
 
-${anchors ? `The attached ${anchors > 1 ? 'images are style anchors' : 'image is a style anchor'}: borrow light, grade, texture and colour handling only. Do not copy their content, layout, products or any marks.\n` : ''}STRICT: absolutely no text, letters, numbers, logos, brand names, trademarks, colour codes or swatch labels anywhere. Labels, signs, screens, covers and pages carry only blank space, colour fields, simple abstract shapes, fine rules or texture. Real, imperfect, crafted, natural textures and light; not glossy CGI. No borders, no collage, a single image.`
+${anchors ? `The attached ${anchors > 1 ? 'images are style anchors' : 'image is a style anchor'}: borrow light, grade, texture and colour handling only. Do not copy their content, layout, products or any marks.\n` : ''}STRICT: absolutely no text, letters, numbers, logos, brand names, trademarks, colour codes or swatch labels anywhere. Labels, signs, screens, covers and pages carry only blank space, colour fields, simple abstract shapes, fine rules or texture. Objects are made of what such objects are really made of. Real, imperfect, crafted, natural textures and light; not glossy CGI. No borders, no collage, a single image.`
 }
 
 async function generateOne(model: string, prompt: string, ratio: string, anchorImages: string[]) {

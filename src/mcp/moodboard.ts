@@ -2,6 +2,7 @@ import { defineTool } from '@payloadcms/plugin-mcp'
 
 import { buildBrief, type Brief } from '../moodboard/brief'
 import { generateTiles, IMAGE_MODEL, IMAGE_MODELS } from '../moodboard/generate'
+import { justifiedLayout } from '../moodboard/layout'
 
 /**
  * Harmonized moodboard capability: board -> one shared look -> the look shown across varied
@@ -11,7 +12,7 @@ import { generateTiles, IMAGE_MODEL, IMAGE_MODELS } from '../moodboard/generate'
 const site = () => process.env.NEXT_PUBLIC_SERVER_URL ?? ''
 const pageUrl = (id: number | string) => `${site()}/library/moodboard/${id}`
 
-const WORKFLOW = `Workflow: 1) moodboard_brief on a board (cheap, under $0.10) returns the distilled look and the planned applications. 2) Show the brief to the person in a few lines (name, idea, palette, type, the application list) and let them adjust it (pass changes as "brief" to moodboard_generate, or rerun moodboard_brief with a "direction"). 3) moodboard_generate makes one image per application (default model ~$0.14 per image) and returns the moodboard page. To redo single tiles pass "only" with their keys.`
+const WORKFLOW = `Workflow: 1) moodboard_brief on a board (cheap, under $0.10) returns the distilled look and the planned applications. 2) Show the person the direction name, idea and the application list in a few lines and let them adjust it (pass changes as "brief" to moodboard_generate, or rerun moodboard_brief with context/breadth/direction). 3) moodboard_generate makes one image per application (default model ~$0.14 per image). 4) Deliver the moodboard as images only: if a design canvas tool is available, create one artboard named after the direction (the brief name) holding just the images, placed with the returned layout. No palette swatches, font specimens or captions: the moodboard is a pure style selection that a brand is built on later. To redo single tiles pass "only" with their keys.`
 
 const text = (v: unknown) => ({ type: 'text' as const, text: typeof v === 'string' ? v : JSON.stringify(v, null, 1) })
 
@@ -28,6 +29,8 @@ function mergeBrief(base: Brief, patch: any): Brief {
     key: a.key || `tile-${i + 1}`,
     title: a.title ?? '',
     category: a.category ?? '',
+    tier: ['core', 'stretch', 'look'].includes(a.tier) ? a.tier : 'core',
+    why: a.why ?? '',
     scene: a.scene ?? '',
     aspect_ratio: a.aspect_ratio ?? '4:5',
     anchors: Array.isArray(a.anchors) ? a.anchors.map(Number) : [],
@@ -49,8 +52,14 @@ async function thumb(url: string | null) {
   }
 }
 
+const absUrl = (u?: string | null) => (u ? (u.startsWith('/') ? `${site()}${u}` : u) : null)
+
 function summary(mb: any) {
+  const imgs = (mb.tiles ?? [])
+    .filter((t: any) => typeof t.image === 'object' && t.image?.url)
+    .map((t: any) => ({ key: t.key, url: absUrl(t.image.url) as string, width: t.image.width ?? 1, height: t.image.height ?? 1 }))
   return {
+    direction: mb.name,
     moodboard_id: mb.id,
     name: mb.name,
     status: mb.status,
@@ -60,20 +69,23 @@ function summary(mb: any) {
     tiles: (mb.tiles ?? []).map((t: any) => ({
       key: t.key,
       title: t.title,
-      image: typeof t.image === 'object' && t.image ? (t.image.url?.startsWith('/') ? `${site()}${t.image.url}` : t.image.url) : null,
+      image: typeof t.image === 'object' && t.image ? absUrl(t.image.url) : null,
       error: t.error ?? undefined,
     })),
+    artboard: { name: mb.name, ...justifiedLayout(imgs) },
   }
 }
 
 export const moodboardTools = {
   moodboard_brief: defineTool({
-    description: `Distil ONE shared look from a board of references (concept, strict palette, type feel with Google Fonts, materials, photography, graphic language, do/don't) and plan a varied set of applications (packaging, poster, signage, screen, photo, merch, pattern and more) that would show that look in use. Brand-free: no logos, names or readable words. Creates a draft moodboard and returns its id and brief. ${WORKFLOW}`,
+    description: `Distil ONE shared look (a direction) from a board of references (concept, strict palette, materials, photography, graphic language, do/don't; used to keep the images consistent) and plan applications that show that look in use: core touchpoints the business really has, a few stretch uses, and one or two look studies. Pass context (who it is for) so the touchpoints fit; breadth shifts the mix. Brand-free: no logos, names or readable words. Creates a draft moodboard and returns its id and brief. ${WORKFLOW}`,
     annotations: { title: 'Plan a harmonized moodboard' },
     input: {
       type: 'object',
       properties: {
         board_id: { type: 'integer', description: 'The board to read (see boards_list)' },
+        context: { type: 'string', description: 'Who the moodboard is for, e.g. "B2B tech company, developer tools" or "neighbourhood bakery". Decides which touchpoints are planned. If left out, it is inferred from the board and flagged.' },
+        breadth: { type: 'string', enum: ['focused', 'balanced', 'wide'], default: 'balanced', description: 'Mix of core touchpoints vs stretch uses vs look studies. focused ~70/20/10, balanced ~50/35/15, wide ~35/45/20.' },
         count: { type: 'integer', minimum: 4, maximum: 12, default: 9, description: 'How many applications' },
         direction: { type: 'string', description: 'Optional steer, e.g. "warmer, more tactile, for a coffee roaster"' },
         applications: { type: 'array', items: { type: 'string' }, description: 'Optional applications that must be included, e.g. ["coffee bag", "café menu board"]' },
@@ -82,7 +94,7 @@ export const moodboardTools = {
     },
   }).handler(async ({ input, req }) => {
     const i = input as any
-    const { brief, cost } = await buildBrief(req.payload, { boardId: Number(i.board_id), count: i.count, direction: i.direction, applications: i.applications })
+    const { brief, cost } = await buildBrief(req.payload, { boardId: Number(i.board_id), count: i.count, context: i.context, breadth: i.breadth, direction: i.direction, applications: i.applications })
     const mb: any = await req.payload.create({
       collection: 'moodboards',
       data: { name: brief.name, board: brief.source.board_id, status: 'brief', brief, cost, model: IMAGE_MODEL, owner: (req.user as any)?.id } as any,
@@ -93,13 +105,13 @@ export const moodboardTools = {
       content: [
         text({ moodboard_id: mb.id, page_url: pageUrl(mb.id), estimated_image_cost_usd: Number((n * 0.14).toFixed(2)) }),
         text(brief),
-        text('Show this look to the person and confirm or adjust before calling moodboard_generate.'),
+        text(`Show this look to the person and confirm or adjust before calling moodboard_generate.${brief.context_inferred ? ` Say that the context was guessed ("${brief.context}") and ask if it is right.` : ''}`),
       ],
     }
   }),
 
   moodboard_generate: defineTool({
-    description: `Generate the images for a planned moodboard: one per application, all in the brief's shared look, using the board's own images as style anchors. Saves them on the moodboard and returns its page (tiles, palette, type specimen, brief). Optionally pass an edited brief (only the fields you change; applications and palette replace the whole list) and "only" to (re)make specific tiles. ${WORKFLOW}`,
+    description: `Generate the images for a planned moodboard: one per application, all in the brief's shared look, using the board's own images as style anchors. Returns the direction name, the image URLs and an artboard layout (x, y, width, height per image) for placing them on a canvas. Optionally pass an edited brief (only the fields you change; applications and palette replace the whole list) and "only" to (re)make specific tiles. ${WORKFLOW}`,
     annotations: { title: 'Generate the moodboard' },
     input: {
       type: 'object',
