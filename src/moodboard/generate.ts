@@ -8,6 +8,9 @@ export const IMAGE_MODEL = process.env.MOODBOARD_IMAGE_MODEL ?? 'google/gemini-3
 export const IMAGE_MODELS = ['google/gemini-3-pro-image', 'google/gemini-2.5-flash-image', 'google/gemini-3.1-flash-image']
 const CONCURRENCY = 6
 
+/** Joins brief phrases without doubled punctuation (".;" or ".."). */
+const join = (xs: string[], sep = '; ') => xs.map((x) => x.trim().replace(/[.;,\s]+$/, '')).filter(Boolean).join(sep)
+
 export function tilePrompt(brief: Brief, app: Brief['applications'][number], anchors: number) {
   // Colour names, not hex codes: models tend to paint hex codes into the image as labels.
   const pal = brief.palette.map((p) => `${p.name} (${p.role}, about ${p.share}%)`).join(', ')
@@ -19,10 +22,10 @@ SHOW: ${app.title}. ${app.scene}
 SHARED LOOK "${brief.name}": ${brief.idea}
 ${style}
 Palette, use only these colours: ${pal}.
-Materials: ${brief.materials.join(', ')}.
-Photography: ${brief.photography.light}; ${brief.photography.lens}; ${brief.photography.grade}.
-Graphic language: ${brief.graphic_language.shapes}; ${brief.graphic_language.pattern}; ${brief.graphic_language.composition}.
-Avoid: ${brief.dont.join('; ')}.
+Materials: ${join(brief.materials, ', ')}.
+Photography: ${join([brief.photography.light, brief.photography.lens, brief.photography.grade])}.
+Graphic language: ${join([brief.graphic_language.shapes, brief.graphic_language.pattern, brief.graphic_language.composition])}.
+Avoid: ${join(brief.dont)}.
 
 ${anchors ? `The attached ${anchors > 1 ? 'images are style anchors' : 'image is a style anchor'}: borrow light, grade, texture and colour handling only. Do not copy their content, layout, products or any marks.\n` : ''}STRICT: absolutely no text, letters, numbers, logos, brand names, trademarks, colour codes or swatch labels anywhere. Labels, signs, screens, covers and pages carry only blank space, colour fields, simple abstract shapes, fine rules or texture. Real, imperfect, crafted, natural textures and light; not glossy CGI. No borders, no collage, a single image.`
 }
