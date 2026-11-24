@@ -10,6 +10,9 @@ import {
   REST_PUT,
 } from '@payloadcms/next/routes'
 
+// Moodboard generation over MCP makes several images in one call.
+export const maxDuration = 300
+
 export const GET = REST_GET(config)
 export const POST = REST_POST(config)
 export const DELETE = REST_DELETE(config)

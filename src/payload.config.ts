@@ -9,6 +9,7 @@ import { buildConfig } from 'payload'
 import { fileURLToPath } from 'url'
 
 import { Boards } from './collections/Boards'
+import { Moodboards } from './collections/Moodboards'
 import { Folders } from './collections/Folders'
 import { Media } from './collections/Media'
 import { References } from './collections/References'
@@ -55,7 +56,7 @@ export default buildConfig({
       baseDir: path.resolve(dirname),
     },
   },
-  collections: [References, Boards, Media, Users, Folders, Tags],
+  collections: [References, Boards, Moodboards, Media, Users, Folders, Tags],
   editor: lexicalEditor(),
   secret: process.env.PAYLOAD_SECRET || '',
   serverURL: process.env.NEXT_PUBLIC_SERVER_URL || '',
@@ -105,6 +106,7 @@ export default buildConfig({
       collections: {
         references: noBuiltins,
         boards: noBuiltins,
+        moodboards: noBuiltins,
         media: noBuiltins,
         users: noBuiltins,
         folders: noBuiltins,

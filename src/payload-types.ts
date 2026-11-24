@@ -158,6 +158,7 @@ export interface Config {
   collections: {
     references: Reference;
     boards: Board;
+    moodboards: Moodboard;
     media: Media;
     users: User;
     folders: Folder;
@@ -172,6 +173,7 @@ export interface Config {
   collectionsSelect: {
     references: ReferencesSelect<false> | ReferencesSelect<true>;
     boards: BoardsSelect<false> | BoardsSelect<true>;
+    moodboards: MoodboardsSelect<false> | MoodboardsSelect<true>;
     media: MediaSelect<false> | MediaSelect<true>;
     users: UsersSelect<false> | UsersSelect<true>;
     folders: FoldersSelect<false> | FoldersSelect<true>;
@@ -495,6 +497,51 @@ export interface Board {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "moodboards".
+ */
+export interface Moodboard {
+  id: number;
+  name: string;
+  board?: (number | null) | Board;
+  status?: ('brief' | 'generating' | 'done' | 'failed') | null;
+  brief:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  model?: string | null;
+  /**
+   * USD spent on images so far
+   */
+  cost?: number | null;
+  tiles?:
+    | {
+        key?: string | null;
+        title?: string | null;
+        prompt?: string | null;
+        image?: (number | null) | Media;
+        error?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  owner?: (number | null) | User;
+  createdBy?: {
+    relationTo: 'users';
+    value: number | User;
+  } | null;
+  updatedBy?: {
+    relationTo: 'users';
+    value: number | User;
+  } | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv".
  */
 export interface PayloadKv {
@@ -524,6 +571,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'boards';
         value: number | Board;
+      } | null)
+    | ({
+        relationTo: 'moodboards';
+        value: number | Moodboard;
       } | null)
     | ({
         relationTo: 'media';
@@ -660,6 +711,33 @@ export interface BoardsSelect<T extends boolean = true> {
     | {
         reference?: T;
         note?: T;
+        id?: T;
+      };
+  owner?: T;
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "moodboards_select".
+ */
+export interface MoodboardsSelect<T extends boolean = true> {
+  name?: T;
+  board?: T;
+  status?: T;
+  brief?: T;
+  model?: T;
+  cost?: T;
+  tiles?:
+    | T
+    | {
+        key?: T;
+        title?: T;
+        prompt?: T;
+        image?: T;
+        error?: T;
         id?: T;
       };
   owner?: T;
@@ -891,7 +969,7 @@ export interface CollectionsWidget {
 export interface CollectionQueryWidget {
   data?: {
     title?: string | null;
-    relatedCollection: 'references' | 'boards' | 'media' | 'users' | 'folders' | 'tags';
+    relatedCollection: 'references' | 'boards' | 'moodboards' | 'media' | 'users' | 'folders' | 'tags';
     where?:
       | {
           [k: string]: unknown;
@@ -913,7 +991,7 @@ export interface CollectionQueryWidget {
  */
 export interface ActivityWidget {
   data?: {
-    excludedCollections?: ('references' | 'boards' | 'media' | 'users' | 'folders' | 'tags')[] | null;
+    excludedCollections?: ('references' | 'boards' | 'moodboards' | 'media' | 'users' | 'folders' | 'tags')[] | null;
   };
   width: 'small' | 'medium' | 'large' | 'x-large' | 'full';
 }

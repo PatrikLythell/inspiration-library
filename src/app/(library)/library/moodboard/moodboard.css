@@ -1,0 +1,185 @@
+/* Harmonized moodboard page: themed by the brief's own palette and fonts. */
+html:has(.mb),
+body.lib-body:has(.mb) {
+  height: auto;
+  background: var(--mb-base, #f4f1ea);
+}
+.mb {
+  min-height: 100vh;
+  background: var(--mb-base);
+  color: var(--mb-ink);
+  padding: 0 clamp(16px, 4vw, 56px) 64px;
+  font-size: 15px;
+  line-height: 1.5;
+}
+.mb a {
+  color: inherit;
+}
+.mb-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 0;
+  font-size: 13px;
+  opacity: 0.7;
+}
+.mb-nav a {
+  text-decoration: none;
+}
+.mb-hero {
+  padding: clamp(24px, 6vw, 80px) 0 32px;
+  max-width: 1100px;
+}
+.mb-hero h1 {
+  font-size: clamp(44px, 9vw, 128px);
+  line-height: 0.92;
+  margin: 0 0 20px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.mb-idea {
+  font-size: clamp(17px, 2vw, 22px);
+  max-width: 46ch;
+  margin: 0 0 18px;
+}
+.mb-mood {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.mb-mood li {
+  border: 1px solid currentColor;
+  border-radius: 99px;
+  padding: 3px 12px;
+  font-size: 13px;
+  opacity: 0.8;
+}
+.mb-palette {
+  display: flex;
+  min-height: 150px;
+  border-radius: 6px;
+  overflow: hidden;
+  margin: 16px 0 40px;
+}
+.mb-swatch {
+  flex-basis: 0;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mb-ink) 14%, transparent);
+  min-width: 90px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 2px;
+  font-size: 12px;
+}
+.mb-swatch b {
+  font-size: 14px;
+}
+.mb-type {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 32px;
+  align-items: center;
+  padding: 32px 0 48px;
+  border-top: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+}
+.mb-type-display {
+  display: flex;
+  align-items: flex-end;
+  gap: 20px;
+}
+.mb-aa {
+  font-size: clamp(96px, 14vw, 200px);
+  line-height: 0.8;
+}
+.mb-type-display div {
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
+}
+.mb-type-feel {
+  font-size: 30px;
+  line-height: 1.1;
+  margin: 0 0 10px;
+}
+.mb-type-text small {
+  opacity: 0.7;
+}
+.mb-tiles {
+  columns: 3 300px;
+  column-gap: 16px;
+}
+.mb-tiles figure {
+  break-inside: avoid;
+  margin: 0 0 16px;
+}
+.mb-tiles img {
+  width: 100%;
+  display: block;
+  border-radius: 4px;
+}
+.mb-tiles figcaption {
+  font-size: 12px;
+  opacity: 0.7;
+  padding: 6px 2px 0;
+}
+.mb-plan ol {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  padding: 0;
+  list-style: none;
+}
+.mb-plan li {
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-radius: 6px;
+  padding: 14px;
+}
+.mb-plan em {
+  opacity: 0.6;
+  font-size: 12px;
+}
+.mb-rules {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 28px;
+  padding: 48px 0 24px;
+  border-top: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  margin-top: 32px;
+}
+.mb-rules h3,
+.mb-source h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0 0 8px;
+  opacity: 0.7;
+}
+.mb-rules p,
+.mb-rules ul {
+  margin: 0 0 8px;
+}
+.mb-rules ul {
+  padding-left: 18px;
+}
+.mb-source div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mb-source img {
+  height: 64px;
+  border-radius: 3px;
+  display: block;
+}
+@media (max-width: 700px) {
+  .mb-type {
+    grid-template-columns: 1fr;
+  }
+  .mb-palette {
+    flex-wrap: wrap;
+  }
+}

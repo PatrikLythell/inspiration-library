@@ -4,6 +4,7 @@ import type { PayloadRequest } from 'payload'
 import { addReference, addToBoard, fetchImage } from '../import/add'
 import { hydrate } from '../search/lib'
 import { searchReferences, similarReferences, byPalette } from '../search/service'
+import { moodboardTools } from './moodboard'
 
 /**
  * Generic reference capability for any assistant: references.search, .search_by_image,
@@ -245,4 +246,5 @@ export const referenceTools = {
     const count = await addToBoard(req.payload, Number(id), i.ids.map(Number), i.note ?? null)
     return { content: [{ type: 'text', text: JSON.stringify({ board_id: id, count, library_url: `${site()}/library?board=${id}` }) }] }
   }),
+  ...moodboardTools,
 }
