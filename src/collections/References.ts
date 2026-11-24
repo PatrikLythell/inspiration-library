@@ -2,6 +2,7 @@ import type { CollectionConfig } from 'payload'
 
 import {
   addEndpoint,
+  keysEndpoint,
   cardEndpoint,
   facetsEndpoint,
   importEndpoint,
@@ -18,6 +19,8 @@ import {
  */
 export const References: CollectionConfig = {
   slug: 'references',
+  // No version history: references are re-imported, not edited, and versions doubled the table.
+  versions: false,
   admin: {
     useAsTitle: 'sourceKey',
     defaultColumns: ['sourceKey', 'source', 'storage', 'status'],
@@ -26,7 +29,7 @@ export const References: CollectionConfig = {
   access: {
     read: ({ req }) => Boolean(req.user),
   },
-  endpoints: [addEndpoint, importEndpoint, syncTagsEndpoint, searchEndpoint, facetsEndpoint, similarSetEndpoint, similarEndpoint, cardEndpoint],
+  endpoints: [keysEndpoint, addEndpoint, importEndpoint, syncTagsEndpoint, searchEndpoint, facetsEndpoint, similarSetEndpoint, similarEndpoint, cardEndpoint],
   fields: [
     { name: 'sourceKey', type: 'text', required: true, unique: true, index: true },
     {

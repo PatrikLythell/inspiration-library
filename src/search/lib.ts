@@ -5,7 +5,8 @@ export const EMBED_MODEL = 'google/gemini-embedding-2'
 export const FULL_DIMS = 3072
 
 /** Which stored vector column search uses: 'embedding' (3072) or 'embedding_1536' (truncated, re-normalised). */
-export const dims = (): 1536 | 3072 => (process.env.EMBED_DIMS === '1536' ? 1536 : 3072)
+/** 1536 by default since 2026-11-24 (top-k overlap 0.92–0.96 vs 3072; halves the database). EMBED_DIMS=3072 to switch back. */
+export const dims = (): 1536 | 3072 => (process.env.EMBED_DIMS === '3072' ? 3072 : 1536)
 const column = (d: number) => (d === 1536 ? 'embedding_1536' : 'embedding')
 
 export type Filters = {
@@ -127,7 +128,7 @@ export async function nearest(
 /** The stored full vector for one reference. */
 export async function vectorOf(payload: Payload, id: number): Promise<number[] | null> {
   const { rows } = await (payload.db as any).pool.query(
-    `SELECT embedding::text AS v FROM "references" WHERE id = $1`,
+    `SELECT ${column(dims())}::text AS v FROM "references" WHERE id = $1`,
     [id],
   )
   if (!rows[0]?.v) return null

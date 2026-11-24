@@ -61,7 +61,7 @@ export const importEndpoint: Endpoint = {
       ? { data: Buffer.from(b.image, 'base64'), name: b.filename ?? `${b.sidecar.id}.jpg`, mimetype: 'image/jpeg' }
       : undefined
     const doc: any = await upsertSidecar(req.payload, { sidecar: b.sidecar, source: b.source, file })
-    if (Array.isArray(b.vector) && b.vector.length === 3072) await setVector(req.payload, doc.id, b.vector)
+    if (Array.isArray(b.vector) && (b.vector.length === 1536 || b.vector.length === 3072)) await setVector(req.payload, doc.id, b.vector)
     return Response.json({ id: doc.id, sourceKey: doc.sourceKey, hasImage: Boolean(doc.image) })
   },
 }
@@ -161,5 +161,24 @@ export const addEndpoint: Endpoint = {
     } catch (e: any) {
       return Response.json({ error: e?.message ?? 'Could not add the image' }, { status: 422 })
     }
+  },
+}
+
+/** GET /api/references/keys?source=x&after=id — sourceKeys already imported (with a vector), 5,000 per page. */
+export const keysEndpoint: Endpoint = {
+  path: '/keys',
+  method: 'get',
+  handler: async (req) => {
+    const denied = guard(req)
+    if (denied) return denied
+    const u = new URL(req.url ?? 'http://x')
+    const after = Number(u.searchParams.get('after') ?? 0)
+    const { rows } = await (req.payload.db as any).pool.query(
+      `SELECT id, source_key FROM "references"
+       WHERE source = $1 AND id > $2 AND embedding_1536 IS NOT NULL AND (storage = 'linked' OR image_id IS NOT NULL)
+       ORDER BY id LIMIT 5000`,
+      [u.searchParams.get('source'), after],
+    )
+    return Response.json({ keys: rows.map((r: any) => r.source_key), last: rows.at(-1)?.id ?? null })
   },
 }

@@ -78,6 +78,7 @@ const overviewEndpoint: Endpoint = {
 /** Moodboards (Eagle folders): nested, shared with the team, ordered items with a note each. */
 export const Boards: CollectionConfig = {
   slug: 'boards',
+  versions: false,
   admin: { useAsTitle: 'name', defaultColumns: ['name', 'parent', 'owner', 'updatedAt'] },
   access: { read: signedIn, create: signedIn, update: signedIn, delete: signedIn },
   endpoints: [overviewEndpoint, itemsEndpoint, cardsEndpoint],

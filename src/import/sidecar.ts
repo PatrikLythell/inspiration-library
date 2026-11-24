@@ -89,13 +89,16 @@ export async function upsertSidecar(
   return doc
 }
 
-/** Stores the full image vector and its truncated 1536 variant. */
+/**
+ * Stores the image vector truncated to 1536 dims (Matryoshka, re-normalised). Accepts 1536 or 3072 values.
+ * The full 3072 vector is kept only when EMBED_DIMS=3072, to keep the database small.
+ */
 export async function setVector(payload: Payload, id: number | string, vector: number[]) {
-  const full = normalise(vector)
-  const short = normalise(full.slice(0, 1536))
+  const short = normalise(vector.slice(0, 1536))
+  const full = process.env.EMBED_DIMS === '3072' && vector.length === 3072 ? normalise(vector) : null
   await (payload.db as any).pool.query(
     `UPDATE "references" SET embedding = $1::halfvec(3072), embedding_1536 = $2::halfvec(1536) WHERE id = $3`,
-    [toLiteral(full), toLiteral(short), id],
+    [full ? toLiteral(full) : null, toLiteral(short), id],
   )
 }
 
