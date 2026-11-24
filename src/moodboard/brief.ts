@@ -111,9 +111,9 @@ Rules:
   (weight, size, case, tightness, layout). Image models only spell short display text reliably, so each such tile gets
   a "headline": 1-4 short words that fit this business, never a brand name, a logo or a real company.
 - voice: read the concept and write how this direction talks, then write EVERY headline in that voice. The copy's
-  energy matches the visuals: a big, bold concept gets big, bold copy ("Numbers, handled."); a calm concept gets calm,
-  witty copy ("Quietly on top of it"); a professional concept gets sleek, confident copy ("Clarity, by design").
-  Headlines across the board should feel written by one person. Small body copy is left to the image model as fine lines; do not
+  energy matches the visuals: a big, bold concept gets big, bold copy; a calm concept gets calm, witty copy; a professional
+  concept gets sleek, confident copy. Write fresh lines for this business, not stock slogans, and in the language the
+  context is written in. Headlines across the board should feel written by one person. Small body copy is left to the image model as fine lines; do not
   describe it. Photography and space tiles normally have headline "" unless signage or a poster is the point.
 - signatures: for EVERY reference, its kind (one of: ${MEDIA_KINDS.join(', ')}; what the reference IS an example of,
   e.g. a laptop showing a website is web-ui, a staged shadow photo is photography, a box is packaging) and 2-4 concrete devices someone would recognise it by (e.g. "human silhouette shadow
