@@ -22,7 +22,14 @@ const SMALL_COPY: Record<string, string> = {
   object: 'It stays a pure photograph: no overlaid graphics.',
 }
 
-export function tilePrompt(brief: Brief, app: Brief['applications'][number], anchors: number) {
+/** The board's one typeface: every typed tile sets its words in it, not in the lead's own type. */
+function typeNote(brief: Brief, typeImage: boolean) {
+  const t = brief.typeface
+  if (!t?.description && !typeImage) return ''
+  return ` Set them in the direction's ONE typeface, not the lead's own type${t?.description ? `: ${t.description}` : ''}.${typeImage ? ' The LAST attached image shows that typeface: match its letterforms, weight, width and case exactly (only the type; ignore the rest of that image).' : ''}`
+}
+
+export function tilePrompt(brief: Brief, app: Brief['applications'][number], anchors: number, typeImage = false) {
   // Colour names, not hex codes: models tend to paint hex codes into the image as labels.
   const pal = brief.palette.map((p) => p.name).join(', ')
   const mood = brief.mood?.length ? brief.mood.join(', ') : ''
@@ -43,7 +50,7 @@ ${app.devices?.length ? `COPY THESE DETAILS FROM THE LEAD: ${join(app.devices)}.
 FOR: ${brief.context || 'a brand'}.
 LIGHT HARMONY ONLY (lean slightly toward these; the lead's character wins): palette ${pal}${mood ? `; mood ${mood}` : ''}.
 
-${app.headline ? `TYPOGRAPHY: set the words "${app.headline}" (spelled exactly like this, nothing added) in place of the lead's own headline copy: same position, weight, scale, case, tightness and placement. Do not add type anywhere the lead has none.${brief.voice ? ` The typesetting should match this voice: ${brief.voice}` : ''} This is the only readable text.` : 'No text at all: the lead has none, so add none.'} ${SMALL_COPY[app.kind] ?? SMALL_COPY.photography} Never logos, brand names, trademarks or colour codes. Objects are made of what such objects are really made of. A single image, no borders, no collage.`
+${app.headline ? `TYPOGRAPHY: set the words "${app.headline}" (spelled exactly like this, nothing added) in place of the lead's own headline copy: same position, scale and placement as the lead's. Do not add type anywhere the lead has none.${typeNote(brief, typeImage)}${brief.voice ? ` The typesetting should match this voice: ${brief.voice}` : ''} This is the only readable text.` : 'No text at all: the lead has none, so add none.'} ${SMALL_COPY[app.kind] ?? SMALL_COPY.photography} Never logos, brand names, trademarks or colour codes. Objects are made of what such objects are really made of. A single image, no borders, no collage.`
 }
 
 async function generateOne(model: string, prompt: string, ratio: string, anchorImages: string[]) {
@@ -90,7 +97,8 @@ export async function generateTiles(payload: Payload, args: { moodboardId: numbe
   // Anchor images: shrink each referenced board image once.
   const { cards } = await boardCards(payload, brief.source.board_id).catch(() => ({ cards: [] as any[] }))
   const byId = new Map(cards.map((c: any) => [c.id, c]))
-  const wanted = [...new Set(apps.flatMap((a) => [a.lead, ...a.anchors].filter(Boolean)))]
+  const typeSrc = brief.typeface?.source ?? null
+  const wanted = [...new Set(apps.flatMap((a) => [a.lead, ...a.anchors, ...(a.headline && typeSrc ? [typeSrc] : [])].filter(Boolean)))]
   const anchorData = new Map<number, string>()
   await Promise.all(
     wanted.map(async (id) => {
@@ -102,8 +110,11 @@ export async function generateTiles(payload: Payload, args: { moodboardId: numbe
 
   let spent = 0
   const results = await pool(apps, CONCURRENCY, async (app) => {
-    const anchors = [app.lead, ...app.anchors].map((id) => anchorData.get(id)).filter(Boolean) as string[]
-    const prompt = tilePrompt(brief, app, anchors.length)
+    const refs = [app.lead, ...app.anchors].map((id) => anchorData.get(id)).filter(Boolean) as string[]
+    // The type source rides along last, unless it already leads or anchors the tile.
+    const typeImg = app.headline && typeSrc && !app.anchors.includes(typeSrc) && typeSrc !== app.lead ? anchorData.get(typeSrc) : undefined
+    const anchors = typeImg ? [...refs, typeImg] : refs
+    const prompt = tilePrompt(brief, app, refs.length, !!typeImg)
     let lastError = ''
     for (let attempt = 0; attempt < 2; attempt++) {
       try {

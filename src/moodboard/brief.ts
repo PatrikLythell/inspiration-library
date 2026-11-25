@@ -73,6 +73,8 @@ export type Brief = {
   mood: string[]
   /** How the direction talks, read from the concept: it sets the tone of every headline. */
   voice: string
+  /** The ONE typeface every typed tile uses: the strongest type influence on the board. */
+  typeface: { source: number | null; description: string }
   palette: { hex: string; name: string; role: string; share: number }[]
   materials: string[]
   photography: { light: string; lens: string; grade: string; subjects: string }
@@ -116,6 +118,11 @@ Rules:
   concept gets sleek, confident copy. Write fresh lines for this business, not stock slogans, and in the language the
   context is written in. Headlines across the board should feel written by one person. Small body copy is left to the image model as fine lines; do not
   describe it. Tiles whose lead has no visible type get headline "".
+- typeface: the direction lands on ONE typeface. Look at every reference with readable type, pick the strongest
+  typographic influence of the bunch, and use it for EVERY headline on the board, whatever reference leads the tile.
+  source: that reference's id (null if no reference has type). description: one concrete sentence a type designer
+  would recognise: classification (grotesk, geometric sans, didone, slab, mono...), weight, width, case, tracking,
+  stroke contrast and its most telling letterforms; no font or foundry names.
 - signatures: for EVERY reference, its kind (one of: ${MEDIA_KINDS.join(', ')}; what the reference IS an example of,
   e.g. a laptop showing a website is web-ui, a staged shadow photo is photography, a box is packaging), has_type
   (true only if readable typography is visible in the reference) and 2-4 concrete devices someone would recognise it by (e.g. "human silhouette shadow
@@ -151,6 +158,7 @@ Return JSON only:
  "context": who it is for, one line, "context_inferred": true|false,
  "mood": 5 words,
  "voice": one sentence on the tone of voice and why it fits the concept,
+ "typeface": {"source": id or null, "description": ""},
  "palette": [{"hex":"#rrggbb","name":"","role":"","share":0}],
  "materials": 4-6 materials, finishes or textures,
  "photography": {"light":"","lens":"","grade":"","subjects":""},
@@ -280,6 +288,10 @@ export function clean(b: any, board: any, cards: any[], opts: { context?: string
     breadth: opts.breadth ?? 'balanced',
     mood: list(b.mood).slice(0, 6),
     voice: str(b.voice),
+    typeface: {
+      source: ids.has(Number(b.typeface?.source)) ? Number(b.typeface.source) : null,
+      description: str(b.typeface?.description),
+    },
     palette,
     materials: list(b.materials).slice(0, 8),
     photography: { light: str(b.photography?.light), lens: str(b.photography?.lens), grade: str(b.photography?.grade), subjects: str(b.photography?.subjects) },
