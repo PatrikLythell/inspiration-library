@@ -81,7 +81,7 @@ export type Brief = {
   dont: string[]
   style_prompt: string
   /** Per reference: the concrete visual devices that make it what it is. */
-  signatures: { id: number; kind: MediaKind; devices: string[] }[]
+  signatures: { id: number; kind: MediaKind; has_type: boolean; devices: string[] }[]
   applications: Application[]
   source: { board_id: number; board_name: string; reference_ids: number[] }
 }
@@ -107,16 +107,18 @@ ${direction ? `Steer from the designer: ${direction}
 ` : ''}
 Rules:
 - No logos, brand names, trademarks or recognisable products from the references.
-- Typography is part of the style: where a lead reference gets its punch from type, the tile keeps that type style
-  (weight, size, case, tightness, layout). Image models only spell short display text reliably, so each such tile gets
+- Typography is part of the style, and the references decide where it goes. Stay true to them: copy appears ONLY
+  where the lead reference itself shows copy, and then it REPLACES that copy in the same place, size and style
+  (weight, case, tightness, layout). Never add type to an image whose reference has none (e.g. a pure photo). Image models only spell short display text reliably, so each such tile gets
   a "headline": 1-4 short words that fit this business, never a brand name, a logo or a real company.
 - voice: read the concept and write how this direction talks, then write EVERY headline in that voice. The copy's
   energy matches the visuals: a big, bold concept gets big, bold copy; a calm concept gets calm, witty copy; a professional
   concept gets sleek, confident copy. Write fresh lines for this business, not stock slogans, and in the language the
   context is written in. Headlines across the board should feel written by one person. Small body copy is left to the image model as fine lines; do not
-  describe it. Photography and space tiles normally have headline "" unless signage or a poster is the point.
+  describe it. Tiles whose lead has no visible type get headline "".
 - signatures: for EVERY reference, its kind (one of: ${MEDIA_KINDS.join(', ')}; what the reference IS an example of,
-  e.g. a laptop showing a website is web-ui, a staged shadow photo is photography, a box is packaging) and 2-4 concrete devices someone would recognise it by (e.g. "human silhouette shadow
+  e.g. a laptop showing a website is web-ui, a staged shadow photo is photography, a box is packaging), has_type
+  (true only if readable typography is visible in the reference) and 2-4 concrete devices someone would recognise it by (e.g. "human silhouette shadow
   falling across a translucent coloured panel", "hard midday cast shadow of a cut-out shape on grey asphalt",
   "objects shot from directly above, scattered in a dense grid of saturated flat colours", "bold saturated green
   object against a sunlit white wall, harsh flash"). Specific and visual, never abstract adjectives.
@@ -155,7 +157,7 @@ Return JSON only:
  "graphic_language": {"shapes":"","pattern":"","layout":"","composition":""},
  "do": 4 rules, "dont": 4 rules,
  "style_prompt": "",
- "signatures": [{"id":0,"kind":"","devices":[""]}],
+ "signatures": [{"id":0,"kind":"","has_type":false,"devices":[""]}],
  "applications": [{"key":"kebab-case","title":"","category":"","tier":"core|stretch|look","why":"","kind":"","lead":0,"devices":[""],"headline":"","scene":"","aspect_ratio":"","anchors":[id]}]}`
 }
 
@@ -262,6 +264,14 @@ export function clean(b: any, board: any, cards: any[], opts: { context?: string
   }
   })
   if (!apps.length) throw new Error('brief has no applications')
+  const sigs = (Array.isArray(b.signatures) ? b.signatures : [])
+      .filter((x: any) => ids.has(Number(x?.id)))
+      .map((x: any) => ({ id: Number(x.id), has_type: x.has_type === true || x.has_type === 'true', kind: ((MEDIA_KINDS as readonly string[]).includes(str(x.kind)) ? x.kind : 'photography') as MediaKind, devices: list(x.devices).slice(0, 4) }))
+  // Stay true to the references: copy only replaces copy that the lead itself shows.
+  if (sigs.length) {
+    const typed = new Set(sigs.filter((x: any) => x.has_type).map((x: any) => x.id))
+    for (const a of apps) if (!typed.has(a.lead)) a.headline = ''
+  }
   return {
     name: str(b.name) || `${board.name} look`,
     idea: str(b.idea),
@@ -282,9 +292,7 @@ export function clean(b: any, board: any, cards: any[], opts: { context?: string
     do: list(b.do).slice(0, 6),
     dont: list(b.dont).slice(0, 6),
     style_prompt: str(b.style_prompt),
-    signatures: (Array.isArray(b.signatures) ? b.signatures : [])
-      .filter((x: any) => ids.has(Number(x?.id)))
-      .map((x: any) => ({ id: Number(x.id), kind: ((MEDIA_KINDS as readonly string[]).includes(str(x.kind)) ? x.kind : 'photography') as MediaKind, devices: list(x.devices).slice(0, 4) })),
+    signatures: sigs,
     applications: apps,
     source: { board_id: Number(board.id), board_name: board.name, reference_ids: cards.map((c) => c.id) },
   }
